@@ -203,9 +203,19 @@ class DumlProtocolTest {
     }
 
     @Test
-    fun udpBridgeProtocol_identifiesHeartbeatPacket() {
+    fun udpBridgeProtocol_identifiesHeartbeatAndAnnounceAndComputesBroadcast() {
         val heartbeat = UdpBridgeProtocol.buildHeartbeatPacket()
         assertEquals(4, heartbeat.size)
         assertTrue(UdpBridgeProtocol.isHeartbeatPacket(heartbeat, heartbeat.size))
+
+        val announce = UdpBridgeProtocol.buildBridgeAnnouncePacket()
+        assertEquals(4, announce.size)
+        assertTrue(UdpBridgeProtocol.isBridgeAnnouncePacket(announce, announce.size))
+
+        val broadcast24 = UdpBridgeProtocol.computeBroadcastIpv4(
+            ipv4Bytes = byteArrayOf(192.toByte(), 168.toByte(), 1, 42),
+            prefixLength = 24,
+        )
+        assertEquals("192.168.1.255", broadcast24)
     }
 }

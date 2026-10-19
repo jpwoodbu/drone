@@ -12,7 +12,7 @@ android {
     defaultConfig {
         applicationId = "one.woodbury.drone"
         minSdk = 29
-        targetSdk = 37
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0"
 

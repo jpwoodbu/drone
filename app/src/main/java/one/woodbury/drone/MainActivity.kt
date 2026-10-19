@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -28,17 +30,24 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -74,6 +83,7 @@ class MainActivity : ComponentActivity() {
                         videoDecoder = connectionManager.videoDecoder,
                         onScanClicked = { connectionManager.scanAndConnect() },
                         onQueryVersionClicked = { connectionManager.sendVersionQuery() },
+                        onSetQuestIp = { ip -> connectionManager.setConfiguredQuestIp(ip) },
                         modifier = Modifier.padding(innerPadding),
                     )
                 }
@@ -104,6 +114,7 @@ fun ControllerDiagnosticsScreen(
     videoDecoder: H264VideoDecoder? = null,
     onScanClicked: () -> Unit,
     onQueryVersionClicked: () -> Unit,
+    onSetQuestIp: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -125,7 +136,10 @@ fun ControllerDiagnosticsScreen(
             onQueryVersionClicked = onQueryVersionClicked,
         )
 
-        QuestUdpBridgeCard(state = state)
+        QuestUdpBridgeCard(
+            state = state,
+            onSetQuestIp = onSetQuestIp,
+        )
 
         DroneVideoFeedCard(
             state = state,
@@ -141,8 +155,15 @@ fun ControllerDiagnosticsScreen(
 }
 
 @Composable
-private fun QuestUdpBridgeCard(state: ControllerConnectionState) {
+private fun QuestUdpBridgeCard(
+    state: ControllerConnectionState,
+    onSetQuestIp: (String) -> Unit,
+) {
     val bridge = state.udpBridgeMetrics
+    var questIpText by remember(bridge.configuredQuestIp) { mutableStateOf(bridge.configuredQuestIp) }
+    val focusManager = LocalFocusManager.current
+    val hasActiveTarget = bridge.activeSubscribers.isNotEmpty() || bridge.configuredQuestIp.isNotEmpty()
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -159,11 +180,11 @@ private fun QuestUdpBridgeCard(state: ControllerConnectionState) {
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = if (bridge.activeSubscribers.isNotEmpty()) "STREAMING" else "LISTENING",
+                    text = if (hasActiveTarget) "STREAMING" else "LISTENING",
                     style = MaterialTheme.typography.labelLarge,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
-                    color = if (bridge.activeSubscribers.isNotEmpty()) {
+                    color = if (hasActiveTarget) {
                         MaterialTheme.colorScheme.primary
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -171,6 +192,10 @@ private fun QuestUdpBridgeCard(state: ControllerConnectionState) {
                 )
             }
             HorizontalDivider()
+            KeyValueRow(
+                label = "Socket Status",
+                value = bridge.socketStatus,
+            )
             KeyValueRow(
                 label = "Phone Local IP(s)",
                 value = if (bridge.localIpv4Addresses.isEmpty()) {
@@ -181,20 +206,100 @@ private fun QuestUdpBridgeCard(state: ControllerConnectionState) {
             )
             KeyValueRow(
                 label = "Quest 2 Subscriber(s)",
-                value = if (bridge.activeSubscribers.isEmpty()) {
-                    "Waiting for Quest 2 heartbeat…"
-                } else {
-                    bridge.activeSubscribers.joinToString(", ")
+                value = when {
+                    bridge.activeSubscribers.isNotEmpty() ->
+                        bridge.activeSubscribers.joinToString(", ")
+                    bridge.configuredQuestIp.isNotEmpty() ->
+                        "Manual: ${bridge.configuredQuestIp}:5600"
+                    else ->
+                        "Waiting for Quest 2 heartbeat…"
                 },
+            )
+            KeyValueRow(
+                label = "Pings TX / Heartbeats RX",
+                value = "${bridge.announcePacketsSent} TX / ${bridge.heartbeatsReceived} RX",
             )
             KeyValueRow(
                 label = "UDP Packets Sent",
                 value = "${bridge.udpPacketsSent} (${bridge.udpBytesSent} B)",
             )
-            KeyValueRow(
-                label = "Heartbeats Received",
-                value = bridge.heartbeatsReceived.toString(),
+            Text(
+                text = "Last Socket Error",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Text(
+                text = bridge.lastSocketError ?: "None",
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = if (bridge.lastSocketError != null) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            OutlinedTextField(
+                value = questIpText,
+                onValueChange = { questIpText = it },
+                label = {
+                    Text(
+                        text = "Quest 2 IPv4 (optional — leave blank for auto-discovery)",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                },
+                placeholder = {
+                    Text(
+                        text = "e.g. 192.168.86.208",
+                        fontFamily = FontFamily.Monospace,
+                    )
+                },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    fontFamily = FontFamily.Monospace,
+                ),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Decimal,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        focusManager.clearFocus()
+                        onSetQuestIp(questIpText)
+                    },
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(
+                    onClick = {
+                        focusManager.clearFocus()
+                        onSetQuestIp(questIpText)
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(text = "Set Quest IP")
+                }
+                OutlinedButton(
+                    onClick = {
+                        questIpText = ""
+                        focusManager.clearFocus()
+                        onSetQuestIp("")
+                    },
+                    enabled = questIpText.isNotBlank() || bridge.configuredQuestIp.isNotBlank(),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(text = "Clear (Auto)")
+                }
+            }
         }
     }
 }

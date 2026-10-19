@@ -115,7 +115,7 @@ class UsbAccessoryConnectionManager(
         }
     }
 
-    private val udpBridgeSender: UdpBridgeSender = UdpBridgeSender { bridgeMetrics ->
+    private val udpBridgeSender: UdpBridgeSender = UdpBridgeSender(applicationContext) { bridgeMetrics ->
         _connectionState.update { currentState ->
             currentState.copy(udpBridgeMetrics = bridgeMetrics)
         }
@@ -227,6 +227,13 @@ class UsbAccessoryConnectionManager(
             writeBytesToAccessory(remoteQuery)
             writeBytesToAccessory(flightControllerQuery)
         }
+    }
+
+    /**
+     * Updates and persists the manual Quest 2 IPv4 target on the UDP bridge.
+     */
+    fun setConfiguredQuestIp(ipAddress: String) {
+        udpBridgeSender.setConfiguredQuestIp(ipAddress)
     }
 
     /**

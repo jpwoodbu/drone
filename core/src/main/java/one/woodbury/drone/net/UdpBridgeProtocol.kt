@@ -1,7 +1,12 @@
 package one.woodbury.drone.net
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.LinkProperties
+import android.net.Network
+import android.net.NetworkCapabilities
 import java.net.Inet4Address
-import java.net.NetworkInterface
+import java.net.InetAddress
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -9,9 +14,12 @@ import java.nio.ByteOrder
  * Defines the lightweight UDP framing protocol used between the Phone Bridge (`:app`)
  * and the Meta Quest 2 Viewer (`:mirror`) on UDP port [UDP_BRIDGE_PORT].
  *
- * - Discovery Heartbeat (`"DJIH"`): 4-byte ASCII magic sent by the Quest 2 every 1,000 ms
- *   to the subnet broadcast address (`x.x.x.255:5600`) and `255.255.255.255:5600`.
+ * - Viewer Discovery Heartbeat (`"DJIH"`): 4-byte ASCII magic sent by the Quest 2 every 1,000 ms
+ *   to the subnet broadcast address (`x.x.x.255:5600`), default gateway, and known phone IP.
  *   The phone records the sender IPv4 address as an active subscriber.
+ * - Bridge Discovery Announce (`"DJIB"`): 4-byte ASCII magic broadcast by the phone every 1,000 ms
+ *   to the subnet broadcast address (`x.x.x.255:5600`). When the Quest 2 receives `"DJIB"`, it
+ *   learns the phone's unicast IP and immediately replies with a unicast `"DJIH"` heartbeat.
  * - Stream Data Packet (`"DJID"`): 12-byte header followed by up to [MAX_UDP_PAYLOAD_BYTES]
  *   (`1,388` bytes) of payload so the entire UDP payload (`<= 1,400` bytes) never fragments
  *   at the Wi-Fi IP layer.
@@ -49,13 +57,20 @@ object UdpBridgeProtocol {
         'H'.code.toByte(),
     )
 
+    private val BRIDGE_ANNOUNCE_MAGIC = byteArrayOf(
+        'D'.code.toByte(),
+        'J'.code.toByte(),
+        'I'.code.toByte(),
+        'B'.code.toByte(),
+    )
+
     private const val DATA_MAGIC_0: Byte = 'D'.code.toByte()
     private const val DATA_MAGIC_1: Byte = 'J'.code.toByte()
     private const val DATA_MAGIC_2: Byte = 'I'.code.toByte()
     private const val DATA_MAGIC_3: Byte = 'D'.code.toByte()
 
     /**
-     * Returns a 4-byte `"DJIH"` discovery heartbeat packet.
+     * Returns a 4-byte `"DJIH"` discovery heartbeat packet sent by the Quest 2 viewer.
      */
     fun buildHeartbeatPacket(): ByteArray = HEARTBEAT_MAGIC.copyOf()
 
@@ -68,6 +83,22 @@ object UdpBridgeProtocol {
             buffer[1] == HEARTBEAT_MAGIC[1] &&
             buffer[2] == HEARTBEAT_MAGIC[2] &&
             buffer[3] == HEARTBEAT_MAGIC[3]
+    }
+
+    /**
+     * Returns a 4-byte `"DJIB"` bridge announce packet sent by the phone bridge.
+     */
+    fun buildBridgeAnnouncePacket(): ByteArray = BRIDGE_ANNOUNCE_MAGIC.copyOf()
+
+    /**
+     * Returns true if the datagram buffer in [buffer] of [length] bytes starts with `"DJIB"`.
+     */
+    fun isBridgeAnnouncePacket(buffer: ByteArray, length: Int = buffer.size): Boolean {
+        if (length < 4) return false
+        return buffer[0] == BRIDGE_ANNOUNCE_MAGIC[0] &&
+            buffer[1] == BRIDGE_ANNOUNCE_MAGIC[1] &&
+            buffer[2] == BRIDGE_ANNOUNCE_MAGIC[2] &&
+            buffer[3] == BRIDGE_ANNOUNCE_MAGIC[3]
     }
 
     /**
@@ -137,35 +168,101 @@ object UdpBridgeProtocol {
     }
 
     /**
-     * Queries active non-loopback IPv4 network interfaces on this Android device and returns
-     * their local IPv4 addresses and subnet broadcast addresses.
+     * Computes the subnet broadcast IPv4 address string (e.g. `"192.168.1.255"`) from a 4-byte
+     * IPv4 address and CIDR [prefixLength] (`1..30`).
      */
-    fun queryLocalIpv4Addresses(): List<LocalIpv4Endpoint> {
-        val endpoints = mutableListOf<LocalIpv4Endpoint>()
+    fun computeBroadcastIpv4(ipv4Bytes: ByteArray, prefixLength: Int): String? {
+        if (ipv4Bytes.size != 4 || prefixLength !in 1..30) return null
+        val ipInt = ((ipv4Bytes[0].toInt() and 0xFF) shl 24) or
+            ((ipv4Bytes[1].toInt() and 0xFF) shl 16) or
+            ((ipv4Bytes[2].toInt() and 0xFF) shl 8) or
+            (ipv4Bytes[3].toInt() and 0xFF)
+        val netmask = -1 shl (32 - prefixLength)
+        val broadcastInt = ipInt or netmask.inv()
+        return "%d.%d.%d.%d".format(
+            (broadcastInt ushr 24) and 0xFF,
+            (broadcastInt ushr 16) and 0xFF,
+            (broadcastInt ushr 8) and 0xFF,
+            broadcastInt and 0xFF,
+        )
+    }
+
+    /**
+     * Queries active IPv4 network interfaces via [ConnectivityManager] (compatible with
+     * Android 11+ / `targetSdk >= 30` where netlink `getNetworkInterfaces()` is restricted).
+     */
+    fun queryLocalIpv4Addresses(context: Context): List<LocalIpv4Endpoint> {
+        val endpointsByIp = LinkedHashMap<String, LocalIpv4Endpoint>()
         try {
-            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return emptyList()
-            while (interfaces.hasMoreElements()) {
-                val networkInterface = interfaces.nextElement()
-                if (!networkInterface.isUp || networkInterface.isLoopback) continue
-                for (interfaceAddress in networkInterface.interfaceAddresses) {
-                    val inetAddress = interfaceAddress.address
-                    if (inetAddress is Inet4Address && !inetAddress.isLoopbackAddress) {
-                        val hostAddress = inetAddress.hostAddress ?: continue
-                        val broadcastAddress = interfaceAddress.broadcast?.hostAddress
-                        endpoints.add(
-                            LocalIpv4Endpoint(
-                                interfaceName = networkInterface.name ?: "net",
-                                ipv4Address = hostAddress,
-                                broadcastAddress = broadcastAddress,
-                            ),
-                        )
-                    }
+            val connectivityManager =
+                context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                    ?: return emptyList()
+
+            val candidateNetworks = LinkedHashSet<Network>()
+            connectivityManager.activeNetwork?.let { candidateNetworks.add(it) }
+            @Suppress("DEPRECATION")
+            connectivityManager.allNetworks.forEach { candidateNetworks.add(it) }
+
+            for (network in candidateNetworks) {
+                val linkProperties = connectivityManager.getLinkProperties(network) ?: continue
+                collectEndpointsFromLinkProperties(linkProperties, endpointsByIp)
+            }
+        } catch (_: Exception) {
+            // Ignore network query exceptions.
+        }
+        return endpointsByIp.values.toList()
+    }
+
+    /**
+     * Finds the active Wi-Fi [Network] so a `DatagramSocket` can be explicitly bound to `wlan0`
+     * via [Network.bindSocket], bypassing cellular data or VPN default routes.
+     */
+    fun findWifiNetwork(context: Context): Network? {
+        try {
+            val connectivityManager =
+                context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                    ?: return null
+            val candidateNetworks = LinkedHashSet<Network>()
+            connectivityManager.activeNetwork?.let { candidateNetworks.add(it) }
+            @Suppress("DEPRECATION")
+            connectivityManager.allNetworks.forEach { candidateNetworks.add(it) }
+
+            for (network in candidateNetworks) {
+                val capabilities = connectivityManager.getNetworkCapabilities(network) ?: continue
+                if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                    return network
                 }
             }
         } catch (_: Exception) {
-            // Ignore network interface enumeration errors.
+            // Ignore network lookup errors.
         }
-        return endpoints
+        return null
+    }
+
+    private fun collectEndpointsFromLinkProperties(
+        linkProperties: LinkProperties,
+        output: LinkedHashMap<String, LocalIpv4Endpoint>,
+    ) {
+        val interfaceName = linkProperties.interfaceName ?: "net"
+        val gatewayAddress = linkProperties.routes
+            .mapNotNull { route -> route.gateway }
+            .filterIsInstance<Inet4Address>()
+            .firstOrNull { gateway -> !gateway.isLoopbackAddress && !gateway.isAnyLocalAddress }
+            ?.hostAddress
+
+        for (linkAddress in linkProperties.linkAddresses) {
+            val address: InetAddress = linkAddress.address
+            if (address is Inet4Address && !address.isLoopbackAddress) {
+                val hostAddress = address.hostAddress ?: continue
+                val broadcastAddress = computeBroadcastIpv4(address.address, linkAddress.prefixLength)
+                output[hostAddress] = LocalIpv4Endpoint(
+                    interfaceName = interfaceName,
+                    ipv4Address = hostAddress,
+                    broadcastAddress = broadcastAddress,
+                    gatewayAddress = gatewayAddress,
+                )
+            }
+        }
     }
 }
 
@@ -194,10 +291,11 @@ data class UdpDataPacket(
 }
 
 /**
- * Represents a local IPv4 interface address and its associated subnet broadcast address.
+ * Represents a local IPv4 interface address and its associated subnet broadcast and gateway addresses.
  */
 data class LocalIpv4Endpoint(
     val interfaceName: String,
     val ipv4Address: String,
     val broadcastAddress: String?,
+    val gatewayAddress: String? = null,
 )
