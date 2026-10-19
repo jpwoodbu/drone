@@ -199,26 +199,49 @@ object DumlProtocol {
     }
 
     /**
-     * Returns a human-readable module name for a DUML module ID.
+     * Returns a human-readable module name for a DUML module ID byte (`bits 0..4` = device type, `bits 5..7` = sub-index).
      */
-    fun formatModuleName(moduleId: Int): String = when (moduleId) {
-        0x00 -> "System (0x00)"
-        MODULE_CAMERA -> "Camera (0x01)"
-        MODULE_MOBILE_APP -> "Mobile App (0x02)"
-        MODULE_FLIGHT_CONTROLLER -> "Flight Controller (0x03)"
-        MODULE_GIMBAL -> "Gimbal (0x04)"
-        0x05 -> "Center Board (0x05)"
-        MODULE_REMOTE_CONTROLLER -> "Remote Controller (0x06)"
-        0x07 -> "Wi-Fi Air Side (0x07)"
-        0x08 -> "DM36x / Encoder (0x08)"
-        MODULE_VIDEO_TRANSMISSION -> "HD Video Link (0x09)"
-        0x0A -> "PC Assistant (0x0A)"
-        MODULE_BATTERY -> "Smart Battery (0x0B)"
-        MODULE_ESC -> "Motor ESC (0x0C)"
-        0x0E -> "Wi-Fi Ground Side (0x0E)"
-        0x12 -> "Vision / ToF Sensor (0x12)"
-        0x1B -> "Glass / Goggles (0x1B)"
-        else -> "Module 0x%02X".format(moduleId)
+    fun formatModuleName(moduleId: Int): String {
+        val deviceType = moduleId and 0x1F
+        val subIndex = (moduleId ushr 5) and 0x07
+        val baseName = when (deviceType) {
+            0x00 -> "Any / Broadcast"
+            MODULE_CAMERA -> "Camera"
+            MODULE_MOBILE_APP -> "Mobile App"
+            MODULE_FLIGHT_CONTROLLER -> "Flight Controller"
+            MODULE_GIMBAL -> "Gimbal"
+            0x05 -> "Center Board"
+            MODULE_REMOTE_CONTROLLER -> "Remote Controller"
+            0x07 -> "Wi-Fi Air Side"
+            0x08 -> "DM36x Air Side"
+            MODULE_VIDEO_TRANSMISSION -> "HD Link MCU Air"
+            0x0A -> "PC Assistant"
+            MODULE_BATTERY -> "Smart Battery"
+            MODULE_ESC -> "Motor ESC"
+            0x0D -> "DM36x Ground Side"
+            0x0E -> "HD Link MCU Ground"
+            0x0F -> "USB Ctrl Air Side"
+            0x10 -> "USB Ctrl Ground Side"
+            0x11 -> "Monocular Vision"
+            0x12 -> "Binocular Vision"
+            0x13 -> "HD Link FPGA Air"
+            0x14 -> "HD Link FPGA Ground"
+            0x15 -> "Simulator"
+            0x16 -> "Base Station"
+            0x17 -> "Airborne Computer"
+            0x18 -> "RC Battery"
+            0x19 -> "IMU"
+            0x1A -> "GPS / RTK"
+            0x1B -> "Wi-Fi Ground Side"
+            0x1C -> "Signal Converter"
+            0x1D -> "PMU"
+            else -> "Module"
+        }
+        return if (subIndex == 0) {
+            "$baseName (0x%02X)".format(moduleId and 0xFF)
+        } else {
+            "$baseName #$subIndex (0x%02X)".format(moduleId and 0xFF)
+        }
     }
 
     /**
