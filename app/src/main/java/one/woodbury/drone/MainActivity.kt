@@ -1,19 +1,26 @@
 package one.woodbury.drone
 
 import android.content.Intent
+import android.graphics.SurfaceTexture
 import android.os.Bundle
+import android.view.Surface
+import android.view.TextureView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -28,17 +35,21 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import one.woodbury.drone.ui.theme.DroneTheme
 import one.woodbury.drone.usb.ConnectionPhase
 import one.woodbury.drone.usb.ControllerConnectionState
 import one.woodbury.drone.usb.LastDumlPacketInfo
 import one.woodbury.drone.usb.UsbAccessoryConnectionManager
 import one.woodbury.drone.usb.UsbAccessoryDescriptor
+import one.woodbury.drone.video.H264VideoDecoder
 
 /**
  * Main diagnostic activity for connecting to the DJI S01A remote controller over USB AOA
@@ -60,6 +71,7 @@ class MainActivity : ComponentActivity() {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     ControllerDiagnosticsScreen(
                         state = connectionState,
+                        videoDecoder = connectionManager.videoDecoder,
                         onScanClicked = { connectionManager.scanAndConnect() },
                         onQueryVersionClicked = { connectionManager.sendVersionQuery() },
                         modifier = Modifier.padding(innerPadding),
@@ -89,6 +101,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun ControllerDiagnosticsScreen(
     state: ControllerConnectionState,
+    videoDecoder: H264VideoDecoder? = null,
     onScanClicked: () -> Unit,
     onQueryVersionClicked: () -> Unit,
     modifier: Modifier = Modifier,
@@ -112,11 +125,109 @@ fun ControllerDiagnosticsScreen(
             onQueryVersionClicked = onQueryVersionClicked,
         )
 
+        DroneVideoFeedCard(
+            state = state,
+            videoDecoder = videoDecoder,
+        )
+
         UsbDescriptorCard(descriptor = state.accessoryDescriptor)
 
         StreamMetricsCard(state = state)
 
         TelemetryDetailsCard(state = state)
+    }
+}
+
+@Composable
+private fun DroneVideoFeedCard(
+    state: ControllerConnectionState,
+    videoDecoder: H264VideoDecoder?,
+) {
+    val metrics = state.videoDecoderMetrics
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Live Video Feed (PoC)",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            HorizontalDivider()
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (videoDecoder != null) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { context ->
+                            TextureView(context).apply {
+                                var activeSurface: Surface? = null
+                                surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                                    override fun onSurfaceTextureAvailable(
+                                        surfaceTexture: SurfaceTexture,
+                                        width: Int,
+                                        height: Int,
+                                    ) {
+                                        val surface = Surface(surfaceTexture)
+                                        activeSurface = surface
+                                        videoDecoder.attachSurface(surface)
+                                    }
+
+                                    override fun onSurfaceTextureSizeChanged(
+                                        surfaceTexture: SurfaceTexture,
+                                        width: Int,
+                                        height: Int,
+                                    ) = Unit
+
+                                    override fun onSurfaceTextureDestroyed(
+                                        surfaceTexture: SurfaceTexture,
+                                    ): Boolean {
+                                        videoDecoder.detachSurface()
+                                        activeSurface?.release()
+                                        activeSurface = null
+                                        return true
+                                    }
+
+                                    override fun onSurfaceTextureUpdated(
+                                        surfaceTexture: SurfaceTexture,
+                                    ) = Unit
+                                }
+                            }
+                        },
+                    )
+                }
+
+                if (metrics.framesDecoded == 0L) {
+                    Text(
+                        text = if (state.aoaVideoEnvelopesReceived > 0L) {
+                            "Awaiting H.264 SPS/Keyframe…"
+                        } else {
+                            "No video stream (power on aircraft)"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color.White.copy(alpha = 0.75f),
+                    )
+                }
+            }
+
+            KeyValueRow(
+                label = "Decoder Output",
+                value = if (metrics.framesDecoded > 0L) {
+                    "${metrics.videoWidth}×${metrics.videoHeight} (${metrics.framesDecoded} frames)"
+                } else {
+                    "Idle (0 frames)"
+                },
+            )
+        }
     }
 }
 

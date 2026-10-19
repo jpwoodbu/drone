@@ -31,6 +31,8 @@ import one.woodbury.drone.protocol.DumlFrame
 import one.woodbury.drone.protocol.DumlProtocol
 import one.woodbury.drone.protocol.FlightControllerTelemetry
 import one.woodbury.drone.protocol.RemoteControllerAxes
+import one.woodbury.drone.video.H264VideoDecoder
+import one.woodbury.drone.video.VideoDecoderMetrics
 
 /**
  * High-level connection phase for the USB link to the DJI remote controller.
@@ -84,6 +86,7 @@ data class ControllerConnectionState(
     val flightControllerTelemetry: FlightControllerTelemetry? = null,
     val lastDumlPacket: LastDumlPacketInfo? = null,
     val lastRawHexPreview: String? = null,
+    val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
 )
 
 /**
@@ -102,6 +105,12 @@ class UsbAccessoryConnectionManager(
 
     private val _connectionState = MutableStateFlow(ControllerConnectionState())
     val connectionState: StateFlow<ControllerConnectionState> = _connectionState.asStateFlow()
+
+    val videoDecoder: H264VideoDecoder = H264VideoDecoder { metrics ->
+        _connectionState.update { currentState ->
+            currentState.copy(videoDecoderMetrics = metrics)
+        }
+    }
 
     @Volatile
     private var activeFileDescriptor: ParcelFileDescriptor? = null
@@ -214,6 +223,7 @@ class UsbAccessoryConnectionManager(
      * Releases all resources when the owning activity is destroyed.
      */
     fun shutdown() {
+        videoDecoder.shutdown()
         closeActiveStream(statusMessage = "Connection closed.")
         if (isReceiverRegistered.compareAndSet(true, false)) {
             try {
@@ -261,11 +271,12 @@ class UsbAccessoryConnectionManager(
         val outputStream = FileOutputStream(fileDescriptor)
         activeOutputStream = outputStream
 
-        _connectionState.update {
+        _connectionState.update { currentState ->
             ControllerConnectionState(
                 connectionPhase = ConnectionPhase.CONNECTED,
                 statusMessage = "Connected to ${descriptor.manufacturer} ${descriptor.model} over Android Open Accessory (AOA).",
                 accessoryDescriptor = descriptor,
+                videoDecoderMetrics = currentState.videoDecoderMetrics,
             )
         }
 
@@ -353,6 +364,7 @@ class UsbAccessoryConnectionManager(
     }
 
     private fun handleVideoChunk(videoChunk: ByteArray) {
+        videoDecoder.feedRawVideoChunk(videoChunk)
         _connectionState.update { currentState ->
             currentState.copy(
                 videoBytesReceived = currentState.videoBytesReceived + videoChunk.size,

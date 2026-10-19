@@ -130,4 +130,50 @@ class DumlProtocolTest {
         assertTrue(decoded.motorsRunning)
         assertTrue(decoded.aircraftInAir)
     }
+
+    @Test
+    fun h264AnnexBStreamExtractor_stripsDjiSeiAndGroupsMultiSliceAccessUnits() {
+        val emittedAccessUnits = mutableListOf<Pair<ByteArray, Boolean>>()
+        val extractor = one.woodbury.drone.video.H264AnnexBStreamExtractor { bytes, isKeyframe ->
+            emittedAccessUnits.add(bytes to isKeyframe)
+        }
+
+        val startCode = byteArrayOf(0x00, 0x00, 0x00, 0x01)
+        val sps = startCode + byteArrayOf(0x67, 0x42, 0x00, 0x1E)
+        val pps = startCode + byteArrayOf(0x68, 0xCE.toByte(), 0x3C, 0x80.toByte())
+        // DJI SEI (nal_unit_type = 6, payloadType = 0xF0, payloadSize = 6) containing an
+        // unescaped 00 00 00 01 sequence inside its payload, plus trailing 0x80.
+        val djiSeiWithUnescapedStartCode = startCode + byteArrayOf(
+            0x06,
+            0xF0.toByte(),
+            0x06,
+            0x00, 0x00, 0x00, 0x01, 0x65, 0xAA.toByte(),
+            0x80.toByte(),
+        )
+        // Frame 1 (IDR): two slices (first slice has first_mb_in_slice = 0 -> MSB 1: 0x88;
+        // second slice has first_mb_in_slice > 0 -> MSB 0: 0x42).
+        val idrSlice1 = startCode + byteArrayOf(0x65, 0x88.toByte(), 0x11, 0x22)
+        val idrSlice2 = startCode + byteArrayOf(0x65, 0x42, 0x33, 0x44)
+        // Frame 2 (Non-IDR P-frame): first_mb_in_slice = 0 -> MSB 1: 0x9A, followed by AUD.
+        val pSlice1 = startCode + byteArrayOf(0x41, 0x9A.toByte(), 0x55, 0x66)
+        val trailingAud = startCode + byteArrayOf(0x09, 0x10)
+
+        val stream = sps + pps + djiSeiWithUnescapedStartCode + idrSlice1 + idrSlice2 + pSlice1 + trailingAud
+
+        var offset = 0
+        while (offset < stream.size) {
+            val step = minOf(7, stream.size - offset)
+            extractor.feedChunk(stream.copyOfRange(offset, offset + step))
+            offset += step
+        }
+
+        assertEquals(2, emittedAccessUnits.size)
+        val (firstFrameBytes, firstIsKeyframe) = emittedAccessUnits[0]
+        assertTrue(firstIsKeyframe)
+        assertArrayEquals(sps + pps + idrSlice1 + idrSlice2, firstFrameBytes)
+
+        val (secondFrameBytes, secondIsKeyframe) = emittedAccessUnits[1]
+        assertEquals(false, secondIsKeyframe)
+        assertArrayEquals(pSlice1, secondFrameBytes)
+    }
 }
