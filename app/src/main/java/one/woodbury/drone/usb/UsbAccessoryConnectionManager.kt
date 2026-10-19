@@ -55,6 +55,17 @@ data class UsbAccessoryDescriptor(
 )
 
 /**
+ * Structured, fixed-width fields for the most recently parsed DUML packet so UI lines do not shift.
+ */
+data class LastDumlPacketInfo(
+    val sourceModule: String,
+    val destinationModule: String,
+    val commandSetAndId: String,
+    val sequenceAndLength: String,
+    val payloadHex: String,
+)
+
+/**
  * Immutable UI state representing everything retrieved over USB from the remote controller.
  */
 data class ControllerConnectionState(
@@ -71,7 +82,7 @@ data class ControllerConnectionState(
     val moduleVersions: Map<String, String> = emptyMap(),
     val remoteControllerAxes: RemoteControllerAxes? = null,
     val flightControllerTelemetry: FlightControllerTelemetry? = null,
-    val lastDumlFrameSummary: String? = null,
+    val lastDumlPacket: LastDumlPacketInfo? = null,
     val lastRawHexPreview: String? = null,
 )
 
@@ -305,24 +316,28 @@ class UsbAccessoryConnectionManager(
     }
 
     private fun handleParsedDumlFrame(frame: DumlFrame) {
-        val moduleLabel = DumlProtocol.formatModuleName(frame.sourceModuleId)
-        val frameSummary = "Src=$moduleLabel → Dst=${DumlProtocol.formatModuleName(frame.destinationModuleId)} | " +
-            "Set=0x%02X Id=0x%02X | Seq=%d | Payload=%d B (%s)".format(
-                frame.commandSet,
-                frame.commandId,
-                frame.sequenceNumber,
-                frame.payload.size,
-                DumlProtocol.formatHexPreview(frame.payload, maxBytes = 12),
-            )
+        val sourceLabel = DumlProtocol.formatModuleName(frame.sourceModuleId)
+        val destinationLabel = DumlProtocol.formatModuleName(frame.destinationModuleId)
+        val packetInfo = LastDumlPacketInfo(
+            sourceModule = sourceLabel,
+            destinationModule = destinationLabel,
+            commandSetAndId = "Set 0x%02X / ID 0x%02X".format(frame.commandSet, frame.commandId),
+            sequenceAndLength = "#%05d (%3d B)".format(frame.sequenceNumber, frame.payload.size),
+            payloadHex = if (frame.payload.isEmpty()) {
+                "(empty payload)"
+            } else {
+                DumlProtocol.formatHexPreview(frame.payload, maxBytes = 16)
+            },
+        )
 
         val decodedOsd = DumlProtocol.decodeFlightControllerOsdTelemetry(frame)
         val decodedAxes = DumlProtocol.decodeRemoteControllerAxes(frame)
         val decodedVersion = DumlProtocol.decodeDeviceVersionString(frame)
 
         _connectionState.update { currentState ->
-            val updatedModules = currentState.observedModules + moduleLabel
+            val updatedModules = currentState.observedModules + sourceLabel
             val updatedVersions = if (decodedVersion != null) {
-                currentState.moduleVersions + (moduleLabel to decodedVersion)
+                currentState.moduleVersions + (sourceLabel to decodedVersion)
             } else {
                 currentState.moduleVersions
             }
@@ -332,7 +347,7 @@ class UsbAccessoryConnectionManager(
                 moduleVersions = updatedVersions,
                 remoteControllerAxes = decodedAxes ?: currentState.remoteControllerAxes,
                 flightControllerTelemetry = decodedOsd ?: currentState.flightControllerTelemetry,
-                lastDumlFrameSummary = frameSummary,
+                lastDumlPacket = packetInfo,
             )
         }
     }

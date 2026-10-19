@@ -30,11 +30,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import one.woodbury.drone.ui.theme.DroneTheme
 import one.woodbury.drone.usb.ConnectionPhase
 import one.woodbury.drone.usb.ControllerConnectionState
+import one.woodbury.drone.usb.LastDumlPacketInfo
 import one.woodbury.drone.usb.UsbAccessoryConnectionManager
 import one.woodbury.drone.usb.UsbAccessoryDescriptor
 
@@ -340,10 +342,36 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
             )
+            val lastPacket = state.lastDumlPacket
+            KeyValueRow(
+                label = "Source",
+                value = lastPacket?.sourceModule ?: "—",
+            )
+            KeyValueRow(
+                label = "Destination",
+                value = lastPacket?.destinationModule ?: "—",
+            )
+            KeyValueRow(
+                label = "Command",
+                value = lastPacket?.commandSetAndId ?: "—",
+            )
+            KeyValueRow(
+                label = "Seq / Length",
+                value = lastPacket?.sequenceAndLength ?: "—",
+            )
             Text(
-                text = state.lastDumlFrameSummary ?: "Waiting for DUML frames…",
+                text = "Payload (Hex)",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = lastPacket?.payloadHex ?: "Waiting for DUML frames…",
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
+                minLines = 2,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
             )
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -357,6 +385,10 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                 text = state.lastRawHexPreview ?: "No bytes read yet.",
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
+                minLines = 2,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
@@ -376,6 +408,8 @@ private fun KeyValueRow(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(0.45f),
         )
         Text(
@@ -383,6 +417,8 @@ private fun KeyValueRow(
             style = MaterialTheme.typography.bodyMedium,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(0.55f),
         )
     }
@@ -411,7 +447,13 @@ fun ControllerDiagnosticsScreenPreview() {
                 videoBytesReceived = 38_400L,
                 dumlFramesReceived = 310L,
                 observedModules = setOf("Remote Controller (0x06)", "Flight Controller (0x03)"),
-                lastDumlFrameSummary = "Src=Remote Controller (0x06) → Dst=Mobile App (0x02) | Set=0x06 Id=0x05 | Seq=42 | Payload=10 B",
+                lastDumlPacket = LastDumlPacketInfo(
+                    sourceModule = "Remote Controller (0x06)",
+                    destinationModule = "Mobile App (0x02)",
+                    commandSetAndId = "Set 0x06 / ID 0x05",
+                    sequenceAndLength = "#00042 ( 10 B)",
+                    payloadHex = "00 04 00 04 00 04 00 04 00 04",
+                ),
                 lastRawHexPreview = "55 CC 49 57 17 00 00 00 55 17 04 92",
             ),
             onScanClicked = {},
