@@ -26,6 +26,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import one.woodbury.drone.net.UdpBridgeSender
+import one.woodbury.drone.net.UdpBridgeSenderMetrics
 import one.woodbury.drone.protocol.AoaStreamParser
 import one.woodbury.drone.protocol.DumlFrame
 import one.woodbury.drone.protocol.DumlProtocol
@@ -87,6 +89,7 @@ data class ControllerConnectionState(
     val lastDumlPacket: LastDumlPacketInfo? = null,
     val lastRawHexPreview: String? = null,
     val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
+    val udpBridgeMetrics: UdpBridgeSenderMetrics = UdpBridgeSenderMetrics(),
 )
 
 /**
@@ -109,6 +112,12 @@ class UsbAccessoryConnectionManager(
     val videoDecoder: H264VideoDecoder = H264VideoDecoder { metrics ->
         _connectionState.update { currentState ->
             currentState.copy(videoDecoderMetrics = metrics)
+        }
+    }
+
+    private val udpBridgeSender: UdpBridgeSender = UdpBridgeSender { bridgeMetrics ->
+        _connectionState.update { currentState ->
+            currentState.copy(udpBridgeMetrics = bridgeMetrics)
         }
     }
 
@@ -152,6 +161,7 @@ class UsbAccessoryConnectionManager(
 
     init {
         registerUsbReceiver()
+        udpBridgeSender.start()
     }
 
     /**
@@ -223,6 +233,7 @@ class UsbAccessoryConnectionManager(
      * Releases all resources when the owning activity is destroyed.
      */
     fun shutdown() {
+        udpBridgeSender.shutdown()
         videoDecoder.shutdown()
         closeActiveStream(statusMessage = "Connection closed.")
         if (isReceiverRegistered.compareAndSet(true, false)) {
@@ -277,6 +288,7 @@ class UsbAccessoryConnectionManager(
                 statusMessage = "Connected to ${descriptor.manufacturer} ${descriptor.model} over Android Open Accessory (AOA).",
                 accessoryDescriptor = descriptor,
                 videoDecoderMetrics = currentState.videoDecoderMetrics,
+                udpBridgeMetrics = currentState.udpBridgeMetrics,
             )
         }
 
@@ -327,6 +339,8 @@ class UsbAccessoryConnectionManager(
     }
 
     private fun handleParsedDumlFrame(frame: DumlFrame) {
+        udpBridgeSender.enqueueDumlFrameBytes(DumlProtocol.encodeDumlFrame(frame))
+
         val sourceLabel = DumlProtocol.formatModuleName(frame.sourceModuleId)
         val destinationLabel = DumlProtocol.formatModuleName(frame.destinationModuleId)
         val packetInfo = LastDumlPacketInfo(
@@ -364,6 +378,7 @@ class UsbAccessoryConnectionManager(
     }
 
     private fun handleVideoChunk(videoChunk: ByteArray) {
+        udpBridgeSender.enqueueVideoChunk(videoChunk)
         videoDecoder.feedRawVideoChunk(videoChunk)
         _connectionState.update { currentState ->
             currentState.copy(

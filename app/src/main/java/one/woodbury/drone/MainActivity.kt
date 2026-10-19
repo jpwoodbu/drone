@@ -125,6 +125,8 @@ fun ControllerDiagnosticsScreen(
             onQueryVersionClicked = onQueryVersionClicked,
         )
 
+        QuestUdpBridgeCard(state = state)
+
         DroneVideoFeedCard(
             state = state,
             videoDecoder = videoDecoder,
@@ -135,6 +137,65 @@ fun ControllerDiagnosticsScreen(
         StreamMetricsCard(state = state)
 
         TelemetryDetailsCard(state = state)
+    }
+}
+
+@Composable
+private fun QuestUdpBridgeCard(state: ControllerConnectionState) {
+    val bridge = state.udpBridgeMetrics
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Quest 2 UDP Bridge (:5600)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = if (bridge.activeSubscribers.isNotEmpty()) "STREAMING" else "LISTENING",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = if (bridge.activeSubscribers.isNotEmpty()) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+            HorizontalDivider()
+            KeyValueRow(
+                label = "Phone Local IP(s)",
+                value = if (bridge.localIpv4Addresses.isEmpty()) {
+                    "No Wi-Fi / Hotspot IPv4"
+                } else {
+                    bridge.localIpv4Addresses.joinToString(", ")
+                },
+            )
+            KeyValueRow(
+                label = "Quest 2 Subscriber(s)",
+                value = if (bridge.activeSubscribers.isEmpty()) {
+                    "Waiting for Quest 2 heartbeat…"
+                } else {
+                    bridge.activeSubscribers.joinToString(", ")
+                },
+            )
+            KeyValueRow(
+                label = "UDP Packets Sent",
+                value = "${bridge.udpPacketsSent} (${bridge.udpBytesSent} B)",
+            )
+            KeyValueRow(
+                label = "Heartbeats Received",
+                value = bridge.heartbeatsReceived.toString(),
+            )
+        }
     }
 }
 
