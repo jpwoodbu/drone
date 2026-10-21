@@ -33,6 +33,7 @@ import one.woodbury.drone.protocol.DumlFrame
 import one.woodbury.drone.protocol.DumlProtocol
 import one.woodbury.drone.protocol.FlightControllerTelemetry
 import one.woodbury.drone.protocol.RemoteControllerAxes
+import one.woodbury.drone.service.BridgeForegroundService
 import one.woodbury.drone.video.H264VideoDecoder
 import one.woodbury.drone.video.VideoDecoderMetrics
 
@@ -240,6 +241,7 @@ class UsbAccessoryConnectionManager(
      * Releases all resources when the owning activity is destroyed.
      */
     fun shutdown() {
+        BridgeForegroundService.stop(applicationContext)
         udpBridgeSender.shutdown()
         videoDecoder.shutdown()
         closeActiveStream(statusMessage = "Connection closed.")
@@ -298,6 +300,8 @@ class UsbAccessoryConnectionManager(
                 udpBridgeMetrics = currentState.udpBridgeMetrics,
             )
         }
+
+        BridgeForegroundService.start(applicationContext)
 
         readerJob?.cancel()
         readerJob = managerScope.launch {
@@ -429,6 +433,7 @@ class UsbAccessoryConnectionManager(
                 statusMessage = statusMessage,
             )
         }
+        BridgeForegroundService.stop(applicationContext)
     }
 
     private fun requestAccessoryPermission(usbAccessory: UsbAccessory) {
