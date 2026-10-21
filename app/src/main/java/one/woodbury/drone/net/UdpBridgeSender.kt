@@ -35,8 +35,8 @@ data class UdpBridgeSenderMetrics(
 
 /**
  * Listens on UDP port [UdpBridgeProtocol.UDP_BRIDGE_PORT] (`5600`) for `"DJIH"` discovery
- * heartbeats from the Meta Quest 2 (`:mirror`), sends `"DJIB"` bridge announcements (both
- * unicast to a configured Quest 2 IP and broadcast to the subnet), and forwards MTU-safe
+ * heartbeats from the Meta Quest 2 (`:mirror`), sends periodic `"DJIB"` bridge announcements
+ * to active subscribers or a configured Quest 2 IP, and forwards MTU-safe
  * `"DJID"` H.264 video and DUML v1 telemetry packets to the Quest 2.
  */
 class UdpBridgeSender(
@@ -300,9 +300,16 @@ class UdpBridgeSender(
         if (configured.isNotEmpty()) {
             targetAddresses.add(configured)
         } else {
-            // Prioritize standard limited broadcast (255.255.255.255) to avoid subnet EPERM errors.
-            targetAddresses.add("255.255.255.255")
+            // Unicast announcement / keepalive to any active Quest 2 subscribers.
+            for (subscriber in subscribersByHost.values) {
+                val host = subscriber.address.hostAddress
+                if (host != null) {
+                    targetAddresses.add(host)
+                }
+            }
         }
+
+        if (targetAddresses.isEmpty()) return
 
         var sentAny = false
         for (host in targetAddresses) {
@@ -317,7 +324,7 @@ class UdpBridgeSender(
                 socket.send(packet)
                 sentAny = true
             } catch (exception: Exception) {
-                if (host == configured || !sentAny) {
+                if (host == configured && configured.isNotEmpty()) {
                     recordSocketError("send($host)", exception)
                 }
             }

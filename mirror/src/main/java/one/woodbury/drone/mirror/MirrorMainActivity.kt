@@ -17,9 +17,11 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +30,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface as ComposeSurface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -97,6 +100,19 @@ fun MirrorCockpitScreen(
     onSetPhoneBridgeIp: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var showIpConfigDialog by remember { mutableStateOf(false) }
+
+    if (showIpConfigDialog) {
+        PhoneBridgeIpDialog(
+            configuredIp = state.configuredPhoneIp,
+            onApplyPhoneIp = { ipAddress ->
+                onSetPhoneBridgeIp(ipAddress)
+                showIpConfigDialog = false
+            },
+            onDismiss = { showIpConfigDialog = false },
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -104,11 +120,9 @@ fun MirrorCockpitScreen(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        TopTelemetryHudBar(state = state)
-
-        PhoneBridgeIpBar(
-            configuredIp = state.configuredPhoneIp,
-            onApplyPhoneIp = onSetPhoneBridgeIp,
+        TopTelemetryHudBar(
+            state = state,
+            onOpenIpConfig = { showIpConfigDialog = true },
         )
 
         Box(
@@ -177,7 +191,7 @@ fun MirrorCockpitScreen(
                                 state.configuredPhoneIp.isNotEmpty() ->
                                     "Sending unicast heartbeat to ${state.configuredPhoneIp}:5600…"
                                 else ->
-                                    "Broadcasting discovery heartbeat on UDP :5600…"
+                                    "Waiting for Phone Bridge mDNS service (_drone-bridge._udp.)…"
                             },
                             style = MaterialTheme.typography.titleMedium,
                             fontFamily = FontFamily.Monospace,
@@ -223,98 +237,115 @@ fun MirrorCockpitScreen(
 }
 
 @Composable
-private fun PhoneBridgeIpBar(
+private fun PhoneBridgeIpDialog(
     configuredIp: String,
     onApplyPhoneIp: (String) -> Unit,
+    onDismiss: () -> Unit,
 ) {
     var textValue by remember(configuredIp) { mutableStateOf(configuredIp) }
     val focusManager = LocalFocusManager.current
 
-    ComposeSurface(
-        modifier = Modifier.fillMaxWidth(),
-        color = Color(0xFF161B22),
-        shape = RoundedCornerShape(8.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedTextField(
-                value = textValue,
-                onValueChange = { textValue = it },
-                label = {
-                    Text(
-                        text = "Phone Bridge IPv4 (optional — leave blank for auto-discovery)",
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                },
-                placeholder = {
-                    Text(
-                        text = "e.g. 192.168.1.50",
-                        fontFamily = FontFamily.Monospace,
-                    )
-                },
-                trailingIcon = {
-                    if (textValue.isNotEmpty() || configuredIp.isNotEmpty()) {
-                        IconButton(
-                            onClick = {
-                                textValue = ""
-                                focusManager.clearFocus()
-                                onApplyPhoneIp("")
-                            },
-                        ) {
-                            Text(
-                                text = "✕",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                },
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(
-                    fontFamily = FontFamily.Monospace,
-                ),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Decimal,
-                    imeAction = ImeAction.Done,
-                ),
-                keyboardActions = KeyboardActions(
-                    onDone = {
-                        focusManager.clearFocus()
-                        onApplyPhoneIp(textValue)
-                    },
-                ),
-                modifier = Modifier.weight(1f),
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Phone Bridge Connection",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
             )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "The Quest 2 automatically discovers the Phone Bridge over mDNS. If auto-discovery is unavailable on your Wi-Fi network, enter the Phone's IPv4 address below.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = textValue,
+                    onValueChange = { textValue = it },
+                    label = {
+                        Text(
+                            text = "Phone Bridge IPv4",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    },
+                    placeholder = {
+                        Text(
+                            text = "e.g. 192.168.1.50",
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    },
+                    trailingIcon = {
+                        if (textValue.isNotEmpty()) {
+                            IconButton(
+                                onClick = {
+                                    textValue = ""
+                                },
+                            ) {
+                                Text(
+                                    text = "✕",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        fontFamily = FontFamily.Monospace,
+                    ),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Decimal,
+                        imeAction = ImeAction.Done,
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            focusManager.clearFocus()
+                            onApplyPhoneIp(textValue)
+                        },
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
             Button(
                 onClick = {
                     focusManager.clearFocus()
                     onApplyPhoneIp(textValue)
                 },
+                enabled = textValue.isNotBlank(),
             ) {
                 Text(text = "Connect IP")
             }
-            OutlinedButton(
-                onClick = {
-                    textValue = ""
-                    focusManager.clearFocus()
-                    onApplyPhoneIp("")
-                },
-                enabled = textValue.isNotBlank() || configuredIp.isNotBlank(),
-            ) {
-                Text(text = "Auto")
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (configuredIp.isNotBlank()) {
+                    OutlinedButton(
+                        onClick = {
+                            focusManager.clearFocus()
+                            onApplyPhoneIp("")
+                        },
+                    ) {
+                        Text(text = "Reset to Auto")
+                    }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(text = "Cancel")
+                }
             }
-        }
-    }
+        },
+    )
 }
 
 @Composable
-private fun TopTelemetryHudBar(state: MirrorReceiverState) {
+private fun TopTelemetryHudBar(
+    state: MirrorReceiverState,
+    onOpenIpConfig: () -> Unit,
+) {
     val telemetry = state.flightControllerTelemetry
     val axes = state.remoteControllerAxes
 
@@ -330,16 +361,31 @@ private fun TopTelemetryHudBar(state: MirrorReceiverState) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            HudMetricItem(
-                label = "BRIDGE",
-                value = state.phoneBridgeIp
-                    ?: if (state.configuredPhoneIp.isNotEmpty()) {
-                        "PING ${state.configuredPhoneIp}:5600"
-                    } else {
-                        "SEARCHING :5600"
-                    },
-                highlight = state.phoneBridgeIp != null,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                HudMetricItem(
+                    label = "BRIDGE",
+                    value = state.phoneBridgeIp
+                        ?: if (state.configuredPhoneIp.isNotEmpty()) {
+                            "MANUAL ${state.configuredPhoneIp}:5600"
+                        } else {
+                            "SEARCHING :5600"
+                        },
+                    highlight = state.phoneBridgeIp != null,
+                )
+                IconButton(
+                    onClick = onOpenIpConfig,
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Text(
+                        text = "⚙",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White.copy(alpha = 0.85f),
+                    )
+                }
+            }
             HudMetricItem(
                 label = "BATTERY",
                 value = if (telemetry != null) "${telemetry.batteryPercentage}%" else "—",

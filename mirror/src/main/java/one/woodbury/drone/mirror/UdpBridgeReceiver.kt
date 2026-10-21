@@ -49,10 +49,9 @@ data class MirrorReceiverState(
 )
 
 /**
- * Broadcasts and sends unicast `"DJIH"` discovery heartbeats on UDP port
- * [UdpBridgeProtocol.UDP_BRIDGE_PORT] (`5600`), listens for `"DJIB"` bridge announcements
- * from the phone, and receives `"DJID"` H.264 video and DUML v1 telemetry datagrams from
- * the phone bridge (`:app`).
+ * Sends unicast `"DJIH"` discovery heartbeats on UDP port [UdpBridgeProtocol.UDP_BRIDGE_PORT] (`5600`),
+ * listens for `"DJIB"` bridge announcements from the phone, and receives `"DJID"` H.264 video
+ * and DUML v1 telemetry datagrams from the phone bridge (`:app`).
  */
 class UdpBridgeReceiver(
     private val applicationContext: Context,
@@ -253,23 +252,10 @@ class UdpBridgeReceiver(
         if (configuredIp.isNotEmpty()) {
             targetAddresses.add(configuredIp)
         } else {
-            // Prioritize standard limited broadcast (255.255.255.255) to avoid subnet EPERM errors.
-            targetAddresses.add("255.255.255.255")
-
-            val endpoints = UdpBridgeProtocol.queryLocalIpv4Addresses(applicationContext)
-            for (endpoint in endpoints) {
-                val gatewayAddress = endpoint.gatewayAddress
-                if (!gatewayAddress.isNullOrBlank()) {
-                    targetAddresses.add(gatewayAddress)
-                }
-                // Also include the .1 subnet gateway in case the phone is acting as a Wi-Fi hotspot.
-                val octets = endpoint.ipv4Address.split('.')
-                if (octets.size == 4) {
-                    targetAddresses.add("${octets[0]}.${octets[1]}.${octets[2]}.1")
-                }
-            }
+            latestPhoneInetAddress?.hostAddress?.let { targetAddresses.add(it) }
         }
-        latestPhoneInetAddress?.hostAddress?.let { targetAddresses.add(it) }
+
+        if (targetAddresses.isEmpty()) return
 
         var sentAny = false
         for (host in targetAddresses) {
