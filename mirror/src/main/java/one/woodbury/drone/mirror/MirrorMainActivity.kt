@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -193,7 +194,13 @@ fun MirrorCockpitScreen(
                             color = Color.White.copy(alpha = 0.7f),
                         )
                         Text(
-                            text = "Socket: ${state.socketStatus} | Heartbeats TX: ${state.heartbeatsSent}",
+                            text = "Socket: ${state.socketStatus} | mDNS: ${state.nsdStatus}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color.White.copy(alpha = 0.7f),
+                        )
+                        Text(
+                            text = "Heartbeats TX: ${state.heartbeatsSent}",
                             style = MaterialTheme.typography.bodySmall,
                             fontFamily = FontFamily.Monospace,
                             color = Color.White.copy(alpha = 0.7f),
@@ -249,6 +256,24 @@ private fun PhoneBridgeIpBar(
                         text = "e.g. 192.168.1.50",
                         fontFamily = FontFamily.Monospace,
                     )
+                },
+                trailingIcon = {
+                    if (textValue.isNotEmpty() || configuredIp.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                textValue = ""
+                                focusManager.clearFocus()
+                                onApplyPhoneIp("")
+                            },
+                        ) {
+                            Text(
+                                text = "✕",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 },
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(

@@ -28,6 +28,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -197,6 +198,10 @@ private fun QuestUdpBridgeCard(
                 value = bridge.socketStatus,
             )
             KeyValueRow(
+                label = "mDNS Service",
+                value = bridge.nsdStatus,
+            )
+            KeyValueRow(
                 label = "Phone Local IP(s)",
                 value = if (bridge.localIpv4Addresses.isEmpty()) {
                     "No Wi-Fi / Hotspot IPv4"
@@ -256,6 +261,24 @@ private fun QuestUdpBridgeCard(
                         text = "e.g. 192.168.86.208",
                         fontFamily = FontFamily.Monospace,
                     )
+                },
+                trailingIcon = {
+                    if (questIpText.isNotEmpty() || bridge.configuredQuestIp.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                questIpText = ""
+                                focusManager.clearFocus()
+                                onSetQuestIp("")
+                            },
+                        ) {
+                            Text(
+                                text = "✕",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 },
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(

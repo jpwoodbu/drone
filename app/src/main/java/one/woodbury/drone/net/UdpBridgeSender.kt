@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicLong
 data class UdpBridgeSenderMetrics(
     val isListening: Boolean = false,
     val socketStatus: String = "Stopped",
+    val nsdStatus: String = "Not registered",
     val lastSocketError: String? = null,
     val localIpv4Addresses: List<String> = emptyList(),
     val configuredQuestIp: String = "",
@@ -69,6 +70,12 @@ class UdpBridgeSender(
 
     @Volatile
     private var lastErrorText: String? = null
+
+    @Volatile
+    private var nsdStatusText: String = "Not registered"
+
+    @Volatile
+    private var nsdServer: NsdBridgeServer? = null
 
     @Volatile
     private var udpSocket: DatagramSocket? = null
@@ -173,6 +180,21 @@ class UdpBridgeSender(
                 isDaemon = true
                 start()
             }
+
+            val server = NsdBridgeServer(
+                context = applicationContext,
+                onRegistrationChanged = { isRegistered, serviceName ->
+                    nsdStatusText = if (isRegistered) {
+                        "Registered ($serviceName)"
+                    } else {
+                        "Unregistered"
+                    }
+                    publishMetrics()
+                },
+            )
+            nsdServer = server
+            server.register()
+
             publishMetrics()
         } catch (exception: Exception) {
             isRunning.set(false)
@@ -190,6 +212,9 @@ class UdpBridgeSender(
     fun shutdown() {
         isRunning.set(false)
         socketStatusText = "Stopped"
+        nsdServer?.unregister()
+        nsdServer = null
+        nsdStatusText = "Stopped"
         announceScheduler?.shutdownNow()
         announceScheduler = null
         listenerThread?.interrupt()
@@ -275,16 +300,8 @@ class UdpBridgeSender(
         if (configured.isNotEmpty()) {
             targetAddresses.add(configured)
         } else {
-            val endpoints = UdpBridgeProtocol.queryLocalIpv4Addresses(applicationContext)
-            for (endpoint in endpoints) {
-                val broadcastAddress = endpoint.broadcastAddress
-                if (!broadcastAddress.isNullOrBlank()) {
-                    targetAddresses.add(broadcastAddress)
-                }
-            }
-            if (endpoints.isEmpty()) {
-                targetAddresses.add("255.255.255.255")
-            }
+            // Prioritize standard limited broadcast (255.255.255.255) to avoid subnet EPERM errors.
+            targetAddresses.add("255.255.255.255")
         }
 
         var sentAny = false
@@ -468,6 +485,7 @@ class UdpBridgeSender(
             UdpBridgeSenderMetrics(
                 isListening = isRunning.get(),
                 socketStatus = socketStatusText,
+                nsdStatus = nsdStatusText,
                 lastSocketError = lastErrorText,
                 localIpv4Addresses = localEndpoints,
                 configuredQuestIp = manualQuestIp,

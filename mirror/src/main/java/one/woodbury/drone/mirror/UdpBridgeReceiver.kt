@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import one.woodbury.drone.net.NsdBridgeClient
 import one.woodbury.drone.net.UdpBridgeProtocol
 import one.woodbury.drone.protocol.DumlFrame
 import one.woodbury.drone.protocol.DumlParseOutcome
@@ -31,6 +32,7 @@ import one.woodbury.drone.video.VideoDecoderMetrics
 data class MirrorReceiverState(
     val isListening: Boolean = false,
     val socketStatus: String = "Not started",
+    val nsdStatus: String = "Searching...",
     val lastSocketError: String? = null,
     val localIpv4Addresses: List<String> = emptyList(),
     val configuredPhoneIp: String = "",
@@ -96,6 +98,9 @@ class UdpBridgeReceiver(
 
     @Volatile
     private var heartbeatScheduler: ScheduledExecutorService? = null
+
+    @Volatile
+    private var nsdClient: NsdBridgeClient? = null
 
     @Volatile
     private var latestPhoneInetAddress: InetAddress? = null
@@ -180,6 +185,35 @@ class UdpBridgeReceiver(
                 isDaemon = true
                 start()
             }
+
+            val client = NsdBridgeClient(
+                context = applicationContext,
+                onDeviceResolved = { hostAddress, _ ->
+                    try {
+                        val inetAddress = InetAddress.getByName(hostAddress)
+                        latestPhoneInetAddress = inetAddress
+                        _receiverState.update { currentState ->
+                            currentState.copy(
+                                phoneBridgeIp = hostAddress,
+                                nsdStatus = "Resolved $hostAddress via mDNS",
+                            )
+                        }
+                        val activeSocket = udpSocket
+                        if (activeSocket != null) {
+                            sendUnicastHeartbeatTo(activeSocket, inetAddress)
+                        }
+                    } catch (_: Exception) {
+                        // Ignore resolution errors.
+                    }
+                },
+                onStatusChanged = { status ->
+                    _receiverState.update { currentState ->
+                        currentState.copy(nsdStatus = status)
+                    }
+                },
+            )
+            nsdClient = client
+            client.startDiscovery()
         } catch (exception: Exception) {
             isRunning.set(false)
             socketStatusText = "Bind failed on :${UdpBridgeProtocol.UDP_BRIDGE_PORT}"
@@ -196,6 +230,8 @@ class UdpBridgeReceiver(
     fun shutdown() {
         isRunning.set(false)
         socketStatusText = "Stopped"
+        nsdClient?.stopDiscovery()
+        nsdClient = null
         heartbeatScheduler?.shutdownNow()
         heartbeatScheduler = null
         receiverThread?.interrupt()
@@ -217,12 +253,11 @@ class UdpBridgeReceiver(
         if (configuredIp.isNotEmpty()) {
             targetAddresses.add(configuredIp)
         } else {
+            // Prioritize standard limited broadcast (255.255.255.255) to avoid subnet EPERM errors.
+            targetAddresses.add("255.255.255.255")
+
             val endpoints = UdpBridgeProtocol.queryLocalIpv4Addresses(applicationContext)
             for (endpoint in endpoints) {
-                val broadcastAddress = endpoint.broadcastAddress
-                if (!broadcastAddress.isNullOrBlank()) {
-                    targetAddresses.add(broadcastAddress)
-                }
                 val gatewayAddress = endpoint.gatewayAddress
                 if (!gatewayAddress.isNullOrBlank()) {
                     targetAddresses.add(gatewayAddress)
@@ -232,9 +267,6 @@ class UdpBridgeReceiver(
                 if (octets.size == 4) {
                     targetAddresses.add("${octets[0]}.${octets[1]}.${octets[2]}.1")
                 }
-            }
-            if (endpoints.isEmpty()) {
-                targetAddresses.add("255.255.255.255")
             }
         }
         latestPhoneInetAddress?.hostAddress?.let { targetAddresses.add(it) }

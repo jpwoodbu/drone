@@ -35,6 +35,12 @@ object UdpBridgeProtocol {
     /** UDP port used by both the phone discovery listener and Quest 2 stream receiver. */
     const val UDP_BRIDGE_PORT: Int = 5600
 
+    /** Service type for mDNS / DNS-SD Network Service Discovery. */
+    const val NSD_SERVICE_TYPE: String = "_drone-bridge._udp."
+
+    /** Default service name advertised by the phone bridge over NSD. */
+    const val NSD_SERVICE_NAME: String = "Drone-Phone-Bridge"
+
     /** Maximum inner payload bytes per UDP datagram so total datagram length is `<= 1,400` bytes. */
     const val MAX_UDP_PAYLOAD_BYTES: Int = 1388
 
