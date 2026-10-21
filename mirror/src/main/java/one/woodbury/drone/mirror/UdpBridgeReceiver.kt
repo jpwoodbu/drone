@@ -327,7 +327,6 @@ class UdpBridgeReceiver(
                                 lastSocketError = lastErrorText,
                             )
                         }
-                        sendUnicastHeartbeatTo(socket, senderAddress)
                     }
                     continue
                 }

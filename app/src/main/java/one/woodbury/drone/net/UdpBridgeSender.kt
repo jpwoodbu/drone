@@ -337,7 +337,6 @@ class UdpBridgeSender(
     private fun runDiscoveryListenerLoop(socket: DatagramSocket) {
         val receiveBuffer = ByteArray(256)
         val receivePacket = DatagramPacket(receiveBuffer, receiveBuffer.size)
-        val announceAckBytes = UdpBridgeProtocol.buildBridgeAnnouncePacket()
         var lastMetricsRefreshMillis = 0L
 
         while (isRunning.get() && !Thread.currentThread().isInterrupted) {
@@ -358,17 +357,6 @@ class UdpBridgeSender(
                             lastSeenEpochMillis = now,
                         )
                         heartbeatsReceivedCounter.incrementAndGet()
-                        try {
-                            val ackPacket = DatagramPacket(
-                                announceAckBytes,
-                                announceAckBytes.size,
-                                senderAddress,
-                                UdpBridgeProtocol.UDP_BRIDGE_PORT,
-                            )
-                            socket.send(ackPacket)
-                        } catch (exception: Exception) {
-                            recordSocketError("ack($hostAddress)", exception)
-                        }
                         pruneExpiredSubscribers(now)
                         publishMetrics()
                         lastMetricsRefreshMillis = now
