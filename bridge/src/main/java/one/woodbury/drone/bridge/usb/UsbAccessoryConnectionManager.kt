@@ -444,18 +444,8 @@ class UsbAccessoryConnectionManager(
         while (managerScope.isActive) {
             val batteryQuery = DumlProtocol.buildBatteryDynamicDataQuery(
                 sequenceNumber = sequenceCounter.getAndIncrement() and 0xFFFF,
-                destinationModuleId = DumlProtocol.MODULE_BATTERY,
-            )
-            val centerPushRequest = DumlProtocol.buildCenterBatteryPushRequest(
-                sequenceNumber = sequenceCounter.getAndIncrement() and 0xFFFF,
-            )
-            val flightControllerQuery = DumlProtocol.buildBatteryDynamicDataQuery(
-                sequenceNumber = sequenceCounter.getAndIncrement() and 0xFFFF,
-                destinationModuleId = DumlProtocol.MODULE_FLIGHT_CONTROLLER,
             )
             writeBytesToAccessory(batteryQuery)
-            writeBytesToAccessory(centerPushRequest)
-            writeBytesToAccessory(flightControllerQuery)
             delay(1000L)
         }
     }

@@ -318,10 +318,7 @@ class DumlProtocolTest {
 
     @Test
     fun buildBatteryDynamicDataQuery_createsValidAoaWrappedDumlPacket() {
-        val bytes = DumlProtocol.buildBatteryDynamicDataQuery(
-            sequenceNumber = 100,
-            destinationModuleId = DumlProtocol.MODULE_BATTERY,
-        )
+        val bytes = DumlProtocol.buildBatteryDynamicDataQuery(sequenceNumber = 100)
         assertEquals(0x55.toByte(), bytes[0])
         assertEquals(0xCC.toByte(), bytes[1])
         assertEquals(0x49.toByte(), bytes[2])
@@ -339,27 +336,7 @@ class DumlProtocolTest {
         assertEquals(DumlProtocol.COMMAND_SET_BATTERY, frame.commandSet)
         assertEquals(DumlProtocol.CMD_BATTERY_DYNAMIC_DATA, frame.commandId)
         assertEquals(100, frame.sequenceNumber)
-    }
-
-    @Test
-    fun buildCenterBatteryPushRequest_createsValidAoaWrappedDumlPacket() {
-        val bytes = DumlProtocol.buildCenterBatteryPushRequest(sequenceNumber = 101)
-        assertEquals(0x55.toByte(), bytes[0])
-        assertEquals(0xCC.toByte(), bytes[1])
-
-        val outcome = DumlProtocol.tryParseDumlFrame(
-            buffer = bytes,
-            offset = 8,
-            availableLength = bytes.size - 8,
-        )
-        assertTrue(outcome is DumlParseOutcome.Parsed)
-        val frame = (outcome as DumlParseOutcome.Parsed).frame
-        assertEquals(DumlProtocol.MODULE_MOBILE_APP, frame.sourceModuleId)
-        assertEquals(DumlProtocol.MODULE_CENTER_BOARD, frame.destinationModuleId)
-        assertEquals(0x00, frame.commandSet)
-        assertEquals(DumlProtocol.CMD_CENTER_REQ_PUSH_BAT_NORMAL_DATA, frame.commandId)
-        assertEquals(101, frame.sequenceNumber)
-        assertArrayEquals(byteArrayOf(0x01), frame.payload)
+        assertArrayEquals(byteArrayOf(), frame.payload)
     }
 
     @Test

@@ -40,7 +40,6 @@ object DumlProtocol {
     /** DUML command IDs for battery management. */
     const val CMD_BATTERY_DYNAMIC_DATA: Int = 0x02
     const val CMD_BATTERY_CELL_VOLTAGE: Int = 0x03
-    const val CMD_CENTER_REQ_PUSH_BAT_NORMAL_DATA: Int = 0x05
     const val CMD_BATTERY_COMMON: Int = 0x06
 
     /** DUML command types. */
@@ -225,34 +224,20 @@ object DumlProtocol {
 
     /**
      * Builds a DUML Battery Dynamic Data query (`0x0D / 0x02`) wrapped for AOA.
+     *
+     * Queries the Intelligent Flight Battery (`MODULE_BATTERY`) directly for
+     * real-time state of charge, remaining capacity, and operational status.
+     * Only read-only GET queries are issued to prevent interfering with flight
+     * controller motor-start routines.
      */
-    fun buildBatteryDynamicDataQuery(
-        sequenceNumber: Int,
-        destinationModuleId: Int = MODULE_BATTERY,
-    ): ByteArray {
+    fun buildBatteryDynamicDataQuery(sequenceNumber: Int): ByteArray {
         val dumlFrame = buildDumlFrame(
             sourceModuleId = MODULE_MOBILE_APP,
-            destinationModuleId = destinationModuleId,
+            destinationModuleId = MODULE_BATTERY,
             sequenceNumber = sequenceNumber,
             commandType = COMMAND_TYPE_REQUEST_WITH_ACK,
             commandSet = COMMAND_SET_BATTERY,
             commandId = CMD_BATTERY_DYNAMIC_DATA,
-        )
-        return wrapInAoaEnvelope(dumlFrame, AOA_CHANNEL_DUML)
-    }
-
-    /**
-     * Builds a Center Board request to push normal battery data (`0x00 / 0x05`) wrapped for AOA.
-     */
-    fun buildCenterBatteryPushRequest(sequenceNumber: Int): ByteArray {
-        val dumlFrame = buildDumlFrame(
-            sourceModuleId = MODULE_MOBILE_APP,
-            destinationModuleId = MODULE_CENTER_BOARD,
-            sequenceNumber = sequenceNumber,
-            commandType = COMMAND_TYPE_REQUEST_WITH_ACK,
-            commandSet = 0x00,
-            commandId = CMD_CENTER_REQ_PUSH_BAT_NORMAL_DATA,
-            payload = byteArrayOf(0x01),
         )
         return wrapInAoaEnvelope(dumlFrame, AOA_CHANNEL_DUML)
     }

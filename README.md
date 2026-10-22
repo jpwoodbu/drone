@@ -96,8 +96,17 @@ Adding remote controller battery level telemetry to both the `:bridge` and
 
 Aircraft battery telemetry uses the genuine State of Charge (SoC) percentage
 reported directly by the DJI Intelligent Flight Battery BMS via active 1 Hz
-polling queries (`CMD_BATTERY_DYNAMIC_DATA` = `0x0D / 0x02` and
-`CMD_CENTER_REQ_PUSH_BAT_NORMAL_DATA` = `0x00 / 0x05`). Synthetic linear
+polling queries (`CMD_BATTERY_DYNAMIC_DATA` = `0x0D / 0x02` addressed
+specifically to `MODULE_BATTERY` `0x0B`).
+
+An earlier experimental query sending `0x00 / 0x05` with a payload of `0x01` to
+the center board (`MODULE_CENTER_BOARD` `0x05`), misdocumented in some
+unofficial references as a push request, was removed because command set
+`0x00` command `0x05` acts as a configuration/parameter write on DJI hardware
+and actively aborted the flight controller's motor-start routine (CSC stick
+command). Likewise, battery queries directed at the flight controller
+(`MODULE_FLIGHT_CONTROLLER` `0x03`) were eliminated. Only read-only GET queries
+targeting the battery BMS directly are transmitted. Synthetic linear
 estimation from voltage curves was deliberately avoided to ensure accurate
 remaining capacity reporting across varying flight loads and battery wear.
 Last-known BMS percentages are preserved across high-frequency cell voltage
