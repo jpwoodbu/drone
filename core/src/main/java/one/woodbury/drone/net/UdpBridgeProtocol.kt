@@ -11,7 +11,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Defines the lightweight UDP framing protocol used between the Phone Bridge (`:app`)
+ * Defines the lightweight UDP framing protocol used between the Phone Bridge (`:bridge`)
  * and the Meta Quest 2 Viewer (`:mirror`) on UDP port [UDP_BRIDGE_PORT].
  *
  * - Viewer Discovery Heartbeat (`"DJIH"`): 4-byte ASCII magic sent by the Quest 2 every 1,000 ms

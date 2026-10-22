@@ -53,7 +53,7 @@ data class MirrorReceiverState(
 /**
  * Sends unicast `"DJIH"` discovery heartbeats on UDP port [UdpBridgeProtocol.UDP_BRIDGE_PORT] (`5600`),
  * listens for `"DJIB"` bridge announcements from the phone, and receives `"DJID"` H.264 video
- * and DUML v1 telemetry datagrams from the phone bridge (`:app`).
+ * and DUML v1 telemetry datagrams from the phone bridge (`:bridge`).
  */
 class UdpBridgeReceiver(
     private val applicationContext: Context,

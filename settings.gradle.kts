@@ -24,5 +24,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "Drone"
 include(":core")
-include(":app")
+include(":bridge")
 include(":mirror")
