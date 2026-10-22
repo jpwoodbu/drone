@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,6 +30,7 @@ import kotlinx.coroutines.launch
 import one.woodbury.drone.net.UdpBridgeSender
 import one.woodbury.drone.net.UdpBridgeSenderMetrics
 import one.woodbury.drone.protocol.AoaStreamParser
+import one.woodbury.drone.protocol.BatteryTelemetry
 import one.woodbury.drone.protocol.DumlFrame
 import one.woodbury.drone.protocol.DumlProtocol
 import one.woodbury.drone.protocol.FlightControllerTelemetry
@@ -87,6 +89,7 @@ data class ControllerConnectionState(
     val moduleVersions: Map<String, String> = emptyMap(),
     val remoteControllerAxes: RemoteControllerAxes? = null,
     val flightControllerTelemetry: FlightControllerTelemetry? = null,
+    val batteryTelemetry: BatteryTelemetry? = null,
     val lastDumlPacket: LastDumlPacketInfo? = null,
     val lastRawHexPreview: String? = null,
     val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
@@ -130,6 +133,9 @@ class UsbAccessoryConnectionManager(
 
     @Volatile
     private var readerJob: Job? = null
+
+    @Volatile
+    private var batteryPollingJob: Job? = null
 
     private val usbBroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -308,6 +314,11 @@ class UsbAccessoryConnectionManager(
             runReadLoop(inputStream)
         }
 
+        batteryPollingJob?.cancel()
+        batteryPollingJob = managerScope.launch {
+            runBatteryPollingLoop()
+        }
+
         sendVersionQuery()
     }
 
@@ -367,6 +378,7 @@ class UsbAccessoryConnectionManager(
         )
 
         val decodedOsd = DumlProtocol.decodeFlightControllerOsdTelemetry(frame)
+        val decodedBattery = DumlProtocol.decodeBatteryTelemetry(frame)
         val decodedAxes = DumlProtocol.decodeRemoteControllerAxes(frame)
         val decodedVersion = DumlProtocol.decodeDeviceVersionString(frame)
 
@@ -377,12 +389,33 @@ class UsbAccessoryConnectionManager(
             } else {
                 currentState.moduleVersions
             }
+            val updatedBattery = when {
+                currentState.batteryTelemetry != null && decodedBattery != null -> {
+                    currentState.batteryTelemetry.mergeWith(decodedBattery)
+                }
+                decodedBattery != null -> decodedBattery
+                else -> currentState.batteryTelemetry
+            }
+            val bmsPercentage = updatedBattery?.percentage
+            val effectiveBatteryPercentage = when {
+                bmsPercentage != null && bmsPercentage in 0..100 -> bmsPercentage
+                decodedOsd != null && decodedOsd.batteryPercentage in 1..100 -> decodedOsd.batteryPercentage
+                else -> currentState.flightControllerTelemetry?.batteryPercentage ?: 0
+            }
+            val updatedTelemetry = when {
+                decodedOsd != null -> decodedOsd.copy(batteryPercentage = effectiveBatteryPercentage)
+                effectiveBatteryPercentage > 0 && currentState.flightControllerTelemetry != null -> {
+                    currentState.flightControllerTelemetry.copy(batteryPercentage = effectiveBatteryPercentage)
+                }
+                else -> currentState.flightControllerTelemetry
+            }
             currentState.copy(
                 dumlFramesReceived = currentState.dumlFramesReceived + 1,
                 observedModules = updatedModules,
                 moduleVersions = updatedVersions,
                 remoteControllerAxes = decodedAxes ?: currentState.remoteControllerAxes,
-                flightControllerTelemetry = decodedOsd ?: currentState.flightControllerTelemetry,
+                flightControllerTelemetry = updatedTelemetry,
+                batteryTelemetry = updatedBattery,
                 lastDumlPacket = packetInfo,
             )
         }
@@ -414,9 +447,31 @@ class UsbAccessoryConnectionManager(
         }
     }
 
+    private suspend fun runBatteryPollingLoop() {
+        while (managerScope.isActive) {
+            val batteryQuery = DumlProtocol.buildBatteryDynamicDataQuery(
+                sequenceNumber = sequenceCounter.getAndIncrement() and 0xFFFF,
+                destinationModuleId = DumlProtocol.MODULE_BATTERY,
+            )
+            val centerPushRequest = DumlProtocol.buildCenterBatteryPushRequest(
+                sequenceNumber = sequenceCounter.getAndIncrement() and 0xFFFF,
+            )
+            val flightControllerQuery = DumlProtocol.buildBatteryDynamicDataQuery(
+                sequenceNumber = sequenceCounter.getAndIncrement() and 0xFFFF,
+                destinationModuleId = DumlProtocol.MODULE_FLIGHT_CONTROLLER,
+            )
+            writeBytesToAccessory(batteryQuery)
+            writeBytesToAccessory(centerPushRequest)
+            writeBytesToAccessory(flightControllerQuery)
+            delay(1000L)
+        }
+    }
+
     private fun closeActiveStream(statusMessage: String) {
         readerJob?.cancel()
         readerJob = null
+        batteryPollingJob?.cancel()
+        batteryPollingJob = null
         activeOutputStream = null
         val descriptorToClose = activeFileDescriptor
         activeFileDescriptor = null

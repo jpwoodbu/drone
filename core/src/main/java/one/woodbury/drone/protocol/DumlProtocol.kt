@@ -32,6 +32,16 @@ object DumlProtocol {
     const val MODULE_VIDEO_TRANSMISSION: Int = 0x09
     const val MODULE_BATTERY: Int = 0x0B
     const val MODULE_ESC: Int = 0x0C
+    const val MODULE_CENTER_BOARD: Int = 0x05
+
+    /** DUML command sets for subsystems that differ from their module ID. */
+    const val COMMAND_SET_BATTERY: Int = 0x0D
+
+    /** DUML command IDs for battery management. */
+    const val CMD_BATTERY_DYNAMIC_DATA: Int = 0x02
+    const val CMD_BATTERY_CELL_VOLTAGE: Int = 0x03
+    const val CMD_CENTER_REQ_PUSH_BAT_NORMAL_DATA: Int = 0x05
+    const val CMD_BATTERY_COMMON: Int = 0x06
 
     /** DUML command types. */
     const val COMMAND_TYPE_REQUEST_WITH_ACK: Int = 0x40
@@ -214,6 +224,40 @@ object DumlProtocol {
     }
 
     /**
+     * Builds a DUML Battery Dynamic Data query (`0x0D / 0x02`) wrapped for AOA.
+     */
+    fun buildBatteryDynamicDataQuery(
+        sequenceNumber: Int,
+        destinationModuleId: Int = MODULE_BATTERY,
+    ): ByteArray {
+        val dumlFrame = buildDumlFrame(
+            sourceModuleId = MODULE_MOBILE_APP,
+            destinationModuleId = destinationModuleId,
+            sequenceNumber = sequenceNumber,
+            commandType = COMMAND_TYPE_REQUEST_WITH_ACK,
+            commandSet = COMMAND_SET_BATTERY,
+            commandId = CMD_BATTERY_DYNAMIC_DATA,
+        )
+        return wrapInAoaEnvelope(dumlFrame, AOA_CHANNEL_DUML)
+    }
+
+    /**
+     * Builds a Center Board request to push normal battery data (`0x00 / 0x05`) wrapped for AOA.
+     */
+    fun buildCenterBatteryPushRequest(sequenceNumber: Int): ByteArray {
+        val dumlFrame = buildDumlFrame(
+            sourceModuleId = MODULE_MOBILE_APP,
+            destinationModuleId = MODULE_CENTER_BOARD,
+            sequenceNumber = sequenceNumber,
+            commandType = COMMAND_TYPE_REQUEST_WITH_ACK,
+            commandSet = 0x00,
+            commandId = CMD_CENTER_REQ_PUSH_BAT_NORMAL_DATA,
+            payload = byteArrayOf(0x01),
+        )
+        return wrapInAoaEnvelope(dumlFrame, AOA_CHANNEL_DUML)
+    }
+
+    /**
      * Returns a human-readable module name for a DUML module ID byte (`bits 0..4` = device type, `bits 5..7` = sub-index).
      */
     fun formatModuleName(moduleId: Int): String {
@@ -365,6 +409,215 @@ object DumlProtocol {
     }
 
     /**
+     * Decodes a Smart Battery telemetry packet (`commandSet = 0x0D`, `0x0B`, or `0x00`).
+     */
+    fun decodeBatteryTelemetry(frame: DumlFrame): BatteryTelemetry? {
+        val isBatteryCommandSet = frame.commandSet == COMMAND_SET_BATTERY ||
+            frame.commandSet == MODULE_BATTERY ||
+            frame.commandSet == 0x00
+        val isBatterySourceModule = (frame.sourceModuleId and 0x1F) == MODULE_BATTERY ||
+            (frame.sourceModuleId and 0x1F) == MODULE_CENTER_BOARD ||
+            (frame.sourceModuleId and 0x1F) == MODULE_FLIGHT_CONTROLLER
+        if (!isBatteryCommandSet && !isBatterySourceModule) {
+            return null
+        }
+
+        val payload = frame.payload
+        return when (frame.commandId) {
+            CMD_BATTERY_DYNAMIC_DATA, CMD_BATTERY_COMMON -> decodeBatteryDynamicData(payload)
+            CMD_BATTERY_CELL_VOLTAGE -> decodeBatteryCellVoltage(payload)
+            else -> null
+        }
+    }
+
+    private fun decodeBatteryDynamicData(payload: ByteArray): BatteryTelemetry? {
+        if (payload.size < 7) return null
+        val byteBuffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+
+        // 1. 32-bit capacity layout with 2-byte prefix (offset = 2).
+        if (payload.size >= 22) {
+            val voltageMillivolts = byteBuffer.getInt(2)
+            val currentMilliamps = byteBuffer.getInt(6)
+            val fullCapacity = byteBuffer.getInt(10)
+            val remainingCapacity = byteBuffer.getInt(14)
+            val temperatureRaw = byteBuffer.getShort(18).toInt() and 0xFFFF
+            val cellCount = payload[20].toInt() and 0xFF
+            val stateOfCharge = payload[21].toInt() and 0xFF
+
+            val isPlausiblePrefix = (voltageMillivolts in 3000..35000) &&
+                (cellCount in 1..8) &&
+                (stateOfCharge in 0..100) &&
+                (fullCapacity in 500..50000 && remainingCapacity in 0..fullCapacity)
+            if (isPlausiblePrefix) {
+                val percentage = if (stateOfCharge in 1..100) {
+                    stateOfCharge
+                } else if (fullCapacity > 0) {
+                    ((remainingCapacity.toLong() * 100L) / fullCapacity.toLong()).toInt().coerceIn(0, 100)
+                } else {
+                    0
+                }
+                val temperatureCelsius = if (temperatureRaw in 100..1000) temperatureRaw * 0.1f else null
+                return BatteryTelemetry(
+                    percentage = percentage,
+                    packVoltageMillivolts = voltageMillivolts,
+                    currentMilliamps = currentMilliamps,
+                    remainingCapacityMilliampHours = remainingCapacity,
+                    fullCapacityMilliampHours = fullCapacity,
+                    temperatureCelsius = temperatureCelsius,
+                    cellCount = cellCount,
+                )
+            }
+        }
+
+        // 2. 32-bit capacity layout prefixless (offset = 0).
+        if (payload.size >= 20) {
+            val voltageMillivolts0 = byteBuffer.getInt(0)
+            val currentMilliamps0 = byteBuffer.getInt(4)
+            val fullCapacity0 = byteBuffer.getInt(8)
+            val remainingCapacity0 = byteBuffer.getInt(12)
+            val temperatureRaw0 = byteBuffer.getShort(16).toInt() and 0xFFFF
+            val cellCount0 = payload[18].toInt() and 0xFF
+            val stateOfCharge0 = payload[19].toInt() and 0xFF
+
+            val isPlausiblePrefixless = (voltageMillivolts0 in 3000..35000) &&
+                (cellCount0 in 1..8) &&
+                (stateOfCharge0 in 0..100) &&
+                (fullCapacity0 in 500..50000 && remainingCapacity0 in 0..fullCapacity0)
+            if (isPlausiblePrefixless) {
+                val percentage = if (stateOfCharge0 in 1..100) {
+                    stateOfCharge0
+                } else if (fullCapacity0 > 0) {
+                    ((remainingCapacity0.toLong() * 100L) / fullCapacity0.toLong()).toInt().coerceIn(0, 100)
+                } else {
+                    0
+                }
+                val temperatureCelsius = if (temperatureRaw0 in 100..1000) temperatureRaw0 * 0.1f else null
+                return BatteryTelemetry(
+                    percentage = percentage,
+                    packVoltageMillivolts = voltageMillivolts0,
+                    currentMilliamps = currentMilliamps0,
+                    remainingCapacityMilliampHours = remainingCapacity0,
+                    fullCapacityMilliampHours = fullCapacity0,
+                    temperatureCelsius = temperatureCelsius,
+                    cellCount = cellCount0,
+                )
+            }
+        }
+
+        // 3. Standard DJI 16-bit Center Battery layout (CENTER_BATTERY record / Center Battery Common).
+        val soc16 = payload[0].toInt() and 0xFF
+        val packMv16 = byteBuffer.getShort(1).toInt() and 0xFFFF
+        val remMah16 = byteBuffer.getShort(3).toInt() and 0xFFFF
+        val fullMah16 = byteBuffer.getShort(5).toInt() and 0xFFFF
+        val life16 = if (payload.size >= 8) payload[7].toInt() and 0xFF else null
+        val isPlausible16Bit = (soc16 in 0..100) &&
+            (packMv16 in 3000..35000) &&
+            (fullMah16 in 500..50000 && remMah16 in 0..fullMah16) &&
+            (life16 == null || life16 in 0..100)
+        if (isPlausible16Bit) {
+            val currentMa16 = if (payload.size >= 16) byteBuffer.getShort(14).toInt() else null
+            val cellVoltages16 = mutableListOf<Int>()
+            if (payload.size >= 22) {
+                for (offset in 16 until minOf(payload.size - 1, 28) step 2) {
+                    val cellMv = byteBuffer.getShort(offset).toInt() and 0xFFFF
+                    if (cellMv in 2000..5000) {
+                        cellVoltages16.add(cellMv)
+                    }
+                }
+            }
+            val percentage16 = if (soc16 in 1..100) {
+                soc16
+            } else if (fullMah16 > 0) {
+                ((remMah16.toLong() * 100L) / fullMah16.toLong()).toInt().coerceIn(0, 100)
+            } else {
+                0
+            }
+            return BatteryTelemetry(
+                percentage = percentage16,
+                packVoltageMillivolts = packMv16,
+                currentMilliamps = currentMa16,
+                remainingCapacityMilliampHours = remMah16,
+                fullCapacityMilliampHours = fullMah16,
+                cellCount = cellVoltages16.size.takeIf { it > 0 },
+                cellVoltagesMillivolts = cellVoltages16,
+            )
+        }
+
+        // 4. Standard DJI 16-bit layout with 2-byte prefix.
+        if (payload.size >= 9) {
+            val soc16P = payload[2].toInt() and 0xFF
+            val packMv16P = byteBuffer.getShort(3).toInt() and 0xFFFF
+            val remMah16P = byteBuffer.getShort(5).toInt() and 0xFFFF
+            val fullMah16P = byteBuffer.getShort(7).toInt() and 0xFFFF
+            val isPlausible16BitPrefixed = (soc16P in 0..100) &&
+                (packMv16P in 3000..35000) &&
+                (fullMah16P in 500..50000 && remMah16P in 0..fullMah16P)
+            if (isPlausible16BitPrefixed) {
+                val currentMa16P = if (payload.size >= 18) byteBuffer.getShort(16).toInt() else null
+                val percentage16P = if (soc16P in 1..100) {
+                    soc16P
+                } else if (fullMah16P > 0) {
+                    ((remMah16P.toLong() * 100L) / fullMah16P.toLong()).toInt().coerceIn(0, 100)
+                } else {
+                    0
+                }
+                return BatteryTelemetry(
+                    percentage = percentage16P,
+                    packVoltageMillivolts = packMv16P,
+                    currentMilliamps = currentMa16P,
+                    remainingCapacityMilliampHours = remMah16P,
+                    fullCapacityMilliampHours = fullMah16P,
+                )
+            }
+        }
+
+        // 5. If capacity fields are unpopulated but payload has standard size and valid voltage.
+        if (payload.size >= 22) {
+            val voltageMillivolts = byteBuffer.getInt(2)
+            if (voltageMillivolts in 3000..35000) {
+                return BatteryTelemetry(
+                    percentage = (payload[21].toInt() and 0xFF).takeIf { it in 0..100 },
+                    packVoltageMillivolts = voltageMillivolts,
+                    currentMilliamps = byteBuffer.getInt(6),
+                    cellCount = (payload[20].toInt() and 0xFF).takeIf { it in 1..8 },
+                )
+            }
+        }
+
+        return null
+    }
+
+    private fun decodeBatteryCellVoltage(payload: ByteArray): BatteryTelemetry? {
+        if (payload.size < 4) return null
+        val (cellCountIndex, voltagesStartIndex) = when {
+            payload.size >= 9 && (payload[2].toInt() and 0xFF) in 1..8 -> 2 to 3
+            payload.size >= 3 && (payload[1].toInt() and 0xFF) in 1..8 -> 1 to 2
+            (payload[0].toInt() and 0xFF) in 1..8 -> 0 to 1
+            else -> return null
+        }
+        val cellCount = payload[cellCountIndex].toInt() and 0xFF
+        if (payload.size < voltagesStartIndex + cellCount * 2) return null
+
+        val byteBuffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+        val cellVoltages = mutableListOf<Int>()
+        for (index in 0 until cellCount) {
+            val cellMv = byteBuffer.getShort(voltagesStartIndex + index * 2).toInt() and 0xFFFF
+            if (cellMv in 2000..5000) {
+                cellVoltages.add(cellMv)
+            }
+        }
+        if (cellVoltages.isEmpty()) return null
+        val totalVoltage = cellVoltages.sum()
+
+        return BatteryTelemetry(
+            percentage = null,
+            packVoltageMillivolts = totalVoltage,
+            cellCount = cellVoltages.size,
+            cellVoltagesMillivolts = cellVoltages,
+        )
+    }
+
+    /**
      * Decodes a Remote Controller stick/wheel state packet (`commandSet = 0x06, commandId = 0x05`).
      * In DUML v1, stick axes are 11-bit or 16-bit values centered at `1024` (range `364..1684`).
      */
@@ -501,6 +754,41 @@ data class RemoteControllerAxes(
     val leftStickHorizontal: Int,
     val gimbalWheel: Int,
 )
+
+/**
+ * Smart Battery telemetry (`commandSet = 0x0D` or `module = 0x0B`).
+ */
+data class BatteryTelemetry(
+    val percentage: Int? = null,
+    val packVoltageMillivolts: Int? = null,
+    val currentMilliamps: Int? = null,
+    val remainingCapacityMilliampHours: Int? = null,
+    val fullCapacityMilliampHours: Int? = null,
+    val temperatureCelsius: Float? = null,
+    val cellCount: Int? = null,
+    val cellVoltagesMillivolts: List<Int> = emptyList(),
+) {
+    /**
+     * Non-destructively merges another [BatteryTelemetry] into this instance.
+     * Non-null fields from [newer] take precedence, preserving existing fields.
+     */
+    fun mergeWith(newer: BatteryTelemetry): BatteryTelemetry {
+        return BatteryTelemetry(
+            percentage = newer.percentage ?: this.percentage,
+            packVoltageMillivolts = newer.packVoltageMillivolts ?: this.packVoltageMillivolts,
+            currentMilliamps = newer.currentMilliamps ?: this.currentMilliamps,
+            remainingCapacityMilliampHours = newer.remainingCapacityMilliampHours ?: this.remainingCapacityMilliampHours,
+            fullCapacityMilliampHours = newer.fullCapacityMilliampHours ?: this.fullCapacityMilliampHours,
+            temperatureCelsius = newer.temperatureCelsius ?: this.temperatureCelsius,
+            cellCount = newer.cellCount ?: this.cellCount,
+            cellVoltagesMillivolts = if (newer.cellVoltagesMillivolts.isNotEmpty()) {
+                newer.cellVoltagesMillivolts
+            } else {
+                this.cellVoltagesMillivolts
+            },
+        )
+    }
+}
 
 /**
  * Stateful stream parser that demultiplexes DJI AOA outer envelopes (`0x55 0xCC`)

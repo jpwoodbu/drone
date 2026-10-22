@@ -606,34 +606,67 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
             }
 
             val telemetry = state.flightControllerTelemetry
-            if (telemetry != null) {
+            val battery = state.batteryTelemetry
+            val batteryPercentage = battery?.percentage ?: telemetry?.batteryPercentage?.takeIf { it > 0 }
+            if (telemetry != null || battery != null) {
                 Text(
-                    text = "Aircraft OSD Telemetry (0x03/0x43)",
+                    text = "Aircraft OSD Telemetry",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
-                KeyValueRow(label = "Battery", value = "${telemetry.batteryPercentage}%")
-                KeyValueRow(label = "GPS Satellites", value = telemetry.gpsSatellites.toString())
                 KeyValueRow(
-                    label = "Coordinates",
-                    value = "%.6f, %.6f".format(telemetry.latitudeDegrees, telemetry.longitudeDegrees),
+                    label = "Battery",
+                    value = if (batteryPercentage != null) "$batteryPercentage%" else "—",
                 )
-                KeyValueRow(
-                    label = "Relative Altitude",
-                    value = "%.1f m".format(telemetry.relativeAltitudeMeters),
-                )
-                KeyValueRow(
-                    label = "Attitude (P / R / Y)",
-                    value = "%.1f° / %.1f° / %.1f°".format(
-                        telemetry.pitchDegrees,
-                        telemetry.rollDegrees,
-                        telemetry.yawDegrees,
-                    ),
-                )
-                KeyValueRow(
-                    label = "Motors / In Air",
-                    value = "Motors=${telemetry.motorsRunning}, InAir=${telemetry.aircraftInAir}",
-                )
+                if (battery != null) {
+                    val voltageText = battery.packVoltageMillivolts?.let { millivolts ->
+                        val volts = millivolts / 1000.0
+                        if (battery.cellCount != null) {
+                            "%.2f V (%dS)".format(volts, battery.cellCount)
+                        } else {
+                            "%.2f V".format(volts)
+                        }
+                    }
+                    if (voltageText != null) {
+                        KeyValueRow(label = "Battery Voltage", value = voltageText)
+                    }
+                    val capacityText = if (battery.remainingCapacityMilliampHours != null && battery.fullCapacityMilliampHours != null) {
+                        "%,d / %,d mAh".format(battery.remainingCapacityMilliampHours, battery.fullCapacityMilliampHours)
+                    } else if (battery.remainingCapacityMilliampHours != null) {
+                        "%,d mAh".format(battery.remainingCapacityMilliampHours)
+                    } else {
+                        null
+                    }
+                    if (capacityText != null) {
+                        KeyValueRow(label = "Battery Capacity", value = capacityText)
+                    }
+                    if (battery.temperatureCelsius != null) {
+                        KeyValueRow(label = "Battery Temp", value = "%.1f °C".format(battery.temperatureCelsius))
+                    }
+                }
+                if (telemetry != null) {
+                    KeyValueRow(label = "GPS Satellites", value = telemetry.gpsSatellites.toString())
+                    KeyValueRow(
+                        label = "Coordinates",
+                        value = "%.6f, %.6f".format(telemetry.latitudeDegrees, telemetry.longitudeDegrees),
+                    )
+                    KeyValueRow(
+                        label = "Relative Altitude",
+                        value = "%.1f m".format(telemetry.relativeAltitudeMeters),
+                    )
+                    KeyValueRow(
+                        label = "Attitude (P / R / Y)",
+                        value = "%.1f° / %.1f° / %.1f°".format(
+                            telemetry.pitchDegrees,
+                            telemetry.rollDegrees,
+                            telemetry.yawDegrees,
+                        ),
+                    )
+                    KeyValueRow(
+                        label = "Motors / In Air",
+                        value = "Motors=${telemetry.motorsRunning}, InAir=${telemetry.aircraftInAir}",
+                    )
+                }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             }
 

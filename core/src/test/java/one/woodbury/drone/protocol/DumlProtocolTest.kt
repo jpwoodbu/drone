@@ -8,6 +8,7 @@ import one.woodbury.drone.net.UdpBridgeProtocol
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -131,6 +132,234 @@ class DumlProtocolTest {
         assertEquals(84, decoded.batteryPercentage)
         assertTrue(decoded.motorsRunning)
         assertTrue(decoded.aircraftInAir)
+    }
+
+    @Test
+    fun decodeBatteryTelemetry_extractsDynamicDataWithPrefix() {
+        val payload = ByteArray(32)
+        val buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+        buffer.putShort(0, 0x0100.toShort()) // 2-byte prefix
+        buffer.putInt(2, 11400)              // 11.4 V (11400 mV)
+        buffer.putInt(6, -1500)              // -1.5 A discharge
+        buffer.putInt(10, 2450)              // 2450 mAh full capacity
+        buffer.putInt(14, 2050)              // 2050 mAh remaining capacity
+        buffer.putShort(18, 265)             // 26.5 °C
+        payload[20] = 3                      // 3S battery
+        payload[21] = 84                     // 84% SoC
+
+        val frame = DumlFrame(
+            sourceModuleId = DumlProtocol.MODULE_BATTERY,
+            destinationModuleId = DumlProtocol.MODULE_MOBILE_APP,
+            sequenceNumber = 42,
+            commandType = 0x00,
+            commandSet = DumlProtocol.COMMAND_SET_BATTERY,
+            commandId = DumlProtocol.CMD_BATTERY_DYNAMIC_DATA,
+            payload = payload,
+        )
+
+        val decoded = DumlProtocol.decodeBatteryTelemetry(frame)
+        assertNotNull(decoded)
+        assertEquals(84, decoded!!.percentage)
+        assertEquals(11400, decoded.packVoltageMillivolts)
+        assertEquals(-1500, decoded.currentMilliamps)
+        assertEquals(2450, decoded.fullCapacityMilliampHours)
+        assertEquals(2050, decoded.remainingCapacityMilliampHours)
+        assertEquals(26.5f, decoded.temperatureCelsius!!, 0.01f)
+        assertEquals(3, decoded.cellCount)
+    }
+
+    @Test
+    fun decodeBatteryTelemetry_extractsDynamicDataWithoutPrefix() {
+        val payload = ByteArray(24)
+        val buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+        buffer.putInt(0, 11400)  // 11.4 V
+        buffer.putInt(4, -1500)  // -1.5 A
+        buffer.putInt(8, 2450)   // 2450 mAh
+        buffer.putInt(12, 2050)  // 2050 mAh
+        buffer.putShort(16, 280) // 28.0 °C
+        payload[18] = 3          // 3S
+        payload[19] = 84         // 84%
+
+        val frame = DumlFrame(
+            sourceModuleId = DumlProtocol.MODULE_BATTERY,
+            destinationModuleId = DumlProtocol.MODULE_MOBILE_APP,
+            sequenceNumber = 43,
+            commandType = 0x00,
+            commandSet = DumlProtocol.COMMAND_SET_BATTERY,
+            commandId = DumlProtocol.CMD_BATTERY_DYNAMIC_DATA,
+            payload = payload,
+        )
+
+        val decoded = DumlProtocol.decodeBatteryTelemetry(frame)
+        assertNotNull(decoded)
+        assertEquals(84, decoded!!.percentage)
+        assertEquals(11400, decoded.packVoltageMillivolts)
+        assertEquals(28.0f, decoded.temperatureCelsius!!, 0.01f)
+    }
+
+    @Test
+    fun decodeBatteryTelemetry_calculatesFallbackPercentageFromCapacity() {
+        val payload = ByteArray(32)
+        val buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+        buffer.putShort(0, 0)
+        buffer.putInt(2, 11200)
+        buffer.putInt(6, -1000)
+        buffer.putInt(10, 2000) // 2000 mAh full
+        buffer.putInt(14, 1500) // 1500 mAh remaining -> 75%
+        buffer.putShort(18, 250)
+        payload[20] = 3
+        payload[21] = 0         // Reported SoC is 0
+
+        val frame = DumlFrame(
+            sourceModuleId = DumlProtocol.MODULE_BATTERY,
+            destinationModuleId = DumlProtocol.MODULE_MOBILE_APP,
+            sequenceNumber = 44,
+            commandType = 0x00,
+            commandSet = DumlProtocol.COMMAND_SET_BATTERY,
+            commandId = DumlProtocol.CMD_BATTERY_DYNAMIC_DATA,
+            payload = payload,
+        )
+
+        val decoded = DumlProtocol.decodeBatteryTelemetry(frame)
+        assertNotNull(decoded)
+        assertEquals(75, decoded!!.percentage)
+    }
+
+    @Test
+    fun decodeBatteryTelemetry_extractsCellVoltages_setsPercentageNull() {
+        val payload = ByteArray(9)
+        val buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+        buffer.putShort(0, 0)      // Prefix
+        payload[2] = 3             // 3 cells
+        buffer.putShort(3, 3850)   // Cell 1: 3850 mV
+        buffer.putShort(5, 3860)   // Cell 2: 3860 mV
+        buffer.putShort(7, 3840)   // Cell 3: 3840 mV
+
+        val frame = DumlFrame(
+            sourceModuleId = DumlProtocol.MODULE_BATTERY,
+            destinationModuleId = DumlProtocol.MODULE_MOBILE_APP,
+            sequenceNumber = 45,
+            commandType = 0x00,
+            commandSet = DumlProtocol.COMMAND_SET_BATTERY,
+            commandId = DumlProtocol.CMD_BATTERY_CELL_VOLTAGE,
+            payload = payload,
+        )
+
+        val decoded = DumlProtocol.decodeBatteryTelemetry(frame)
+        assertNotNull(decoded)
+        assertEquals(3, decoded!!.cellCount)
+        assertEquals(11550, decoded.packVoltageMillivolts)
+        assertEquals(listOf(3850, 3860, 3840), decoded.cellVoltagesMillivolts)
+        assertNull(decoded.percentage)
+    }
+
+    @Test
+    fun decodeBatteryTelemetry_extractsStandard16BitCenterBattery() {
+        val payload = ByteArray(24)
+        val buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+        payload[0] = 45                               // 45% State of Charge (2 LEDs)
+        buffer.putShort(1, 11400.toShort())           // 11.4 V pack voltage
+        buffer.putShort(3, 1720.toShort())            // 1720 mAh remaining
+        buffer.putShort(5, 3830.toShort())            // 3830 mAh full capacity
+        payload[7] = 98.toByte()                      // Life
+        buffer.putShort(8, 25.toShort())              // 25 cycles
+        buffer.putInt(10, 0)                          // No errors
+        buffer.putShort(14, (-1200).toShort())        // -1.2 A current draw
+        buffer.putShort(16, 3800.toShort())           // Cell 1: 3800 mV
+        buffer.putShort(18, 3805.toShort())           // Cell 2: 3805 mV
+        buffer.putShort(20, 3795.toShort())           // Cell 3: 3795 mV
+
+        val frame = DumlFrame(
+            sourceModuleId = DumlProtocol.MODULE_CENTER_BOARD,
+            destinationModuleId = DumlProtocol.MODULE_MOBILE_APP,
+            sequenceNumber = 46,
+            commandType = 0x00,
+            commandSet = 0x00,
+            commandId = DumlProtocol.CMD_BATTERY_COMMON,
+            payload = payload,
+        )
+
+        val decoded = DumlProtocol.decodeBatteryTelemetry(frame)
+        assertNotNull(decoded)
+        assertEquals(45, decoded!!.percentage)
+        assertEquals(11400, decoded.packVoltageMillivolts)
+        assertEquals(1720, decoded.remainingCapacityMilliampHours)
+        assertEquals(3830, decoded.fullCapacityMilliampHours)
+        assertEquals(-1200, decoded.currentMilliamps)
+        assertEquals(3, decoded.cellCount)
+        assertEquals(listOf(3800, 3805, 3795), decoded.cellVoltagesMillivolts)
+    }
+
+    @Test
+    fun batteryTelemetry_mergeWith_preservesBmsPercentageAcrossCellVoltageUpdates() {
+        val bmsTelemetry = BatteryTelemetry(
+            percentage = 45,
+            packVoltageMillivolts = 11400,
+            currentMilliamps = -1200,
+            remainingCapacityMilliampHours = 1720,
+            fullCapacityMilliampHours = 3830,
+        )
+        val cellVoltageTelemetry = BatteryTelemetry(
+            percentage = null,
+            packVoltageMillivolts = 11350,
+            cellCount = 3,
+            cellVoltagesMillivolts = listOf(3780, 3785, 3785),
+        )
+
+        val merged = bmsTelemetry.mergeWith(cellVoltageTelemetry)
+        assertEquals(45, merged.percentage)
+        assertEquals(11350, merged.packVoltageMillivolts)
+        assertEquals(-1200, merged.currentMilliamps)
+        assertEquals(1720, merged.remainingCapacityMilliampHours)
+        assertEquals(3830, merged.fullCapacityMilliampHours)
+        assertEquals(3, merged.cellCount)
+        assertEquals(listOf(3780, 3785, 3785), merged.cellVoltagesMillivolts)
+    }
+
+    @Test
+    fun buildBatteryDynamicDataQuery_createsValidAoaWrappedDumlPacket() {
+        val bytes = DumlProtocol.buildBatteryDynamicDataQuery(
+            sequenceNumber = 100,
+            destinationModuleId = DumlProtocol.MODULE_BATTERY,
+        )
+        assertEquals(0x55.toByte(), bytes[0])
+        assertEquals(0xCC.toByte(), bytes[1])
+        assertEquals(0x49.toByte(), bytes[2])
+        assertEquals(0x57.toByte(), bytes[3])
+
+        val outcome = DumlProtocol.tryParseDumlFrame(
+            buffer = bytes,
+            offset = 8,
+            availableLength = bytes.size - 8,
+        )
+        assertTrue(outcome is DumlParseOutcome.Parsed)
+        val frame = (outcome as DumlParseOutcome.Parsed).frame
+        assertEquals(DumlProtocol.MODULE_MOBILE_APP, frame.sourceModuleId)
+        assertEquals(DumlProtocol.MODULE_BATTERY, frame.destinationModuleId)
+        assertEquals(DumlProtocol.COMMAND_SET_BATTERY, frame.commandSet)
+        assertEquals(DumlProtocol.CMD_BATTERY_DYNAMIC_DATA, frame.commandId)
+        assertEquals(100, frame.sequenceNumber)
+    }
+
+    @Test
+    fun buildCenterBatteryPushRequest_createsValidAoaWrappedDumlPacket() {
+        val bytes = DumlProtocol.buildCenterBatteryPushRequest(sequenceNumber = 101)
+        assertEquals(0x55.toByte(), bytes[0])
+        assertEquals(0xCC.toByte(), bytes[1])
+
+        val outcome = DumlProtocol.tryParseDumlFrame(
+            buffer = bytes,
+            offset = 8,
+            availableLength = bytes.size - 8,
+        )
+        assertTrue(outcome is DumlParseOutcome.Parsed)
+        val frame = (outcome as DumlParseOutcome.Parsed).frame
+        assertEquals(DumlProtocol.MODULE_MOBILE_APP, frame.sourceModuleId)
+        assertEquals(DumlProtocol.MODULE_CENTER_BOARD, frame.destinationModuleId)
+        assertEquals(0x00, frame.commandSet)
+        assertEquals(DumlProtocol.CMD_CENTER_REQ_PUSH_BAT_NORMAL_DATA, frame.commandId)
+        assertEquals(101, frame.sequenceNumber)
+        assertArrayEquals(byteArrayOf(0x01), frame.payload)
     }
 
     @Test

@@ -386,9 +386,11 @@ private fun TopTelemetryHudBar(
                     )
                 }
             }
+            val batteryPercentage = state.batteryTelemetry?.percentage
+                ?: telemetry?.batteryPercentage?.takeIf { it > 0 }
             HudMetricItem(
                 label = "BATTERY",
-                value = if (telemetry != null) "${telemetry.batteryPercentage}%" else "—",
+                value = if (batteryPercentage != null) "$batteryPercentage%" else "—",
             )
             HudMetricItem(
                 label = "ALTITUDE",

@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import one.woodbury.drone.net.NsdBridgeClient
 import one.woodbury.drone.net.UdpBridgeProtocol
+import one.woodbury.drone.protocol.BatteryTelemetry
 import one.woodbury.drone.protocol.DumlFrame
 import one.woodbury.drone.protocol.DumlParseOutcome
 import one.woodbury.drone.protocol.DumlProtocol
@@ -45,6 +46,7 @@ data class MirrorReceiverState(
     val lastSourceModule: String? = null,
     val remoteControllerAxes: RemoteControllerAxes? = null,
     val flightControllerTelemetry: FlightControllerTelemetry? = null,
+    val batteryTelemetry: BatteryTelemetry? = null,
     val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
 )
 
@@ -396,9 +398,30 @@ class UdpBridgeReceiver(
     ) {
         val sourceLabel = DumlProtocol.formatModuleName(frame.sourceModuleId)
         val decodedOsd = DumlProtocol.decodeFlightControllerOsdTelemetry(frame)
+        val decodedBattery = DumlProtocol.decodeBatteryTelemetry(frame)
         val decodedAxes = DumlProtocol.decodeRemoteControllerAxes(frame)
 
         _receiverState.update { currentState ->
+            val updatedBattery = when {
+                currentState.batteryTelemetry != null && decodedBattery != null -> {
+                    currentState.batteryTelemetry.mergeWith(decodedBattery)
+                }
+                decodedBattery != null -> decodedBattery
+                else -> currentState.batteryTelemetry
+            }
+            val bmsPercentage = updatedBattery?.percentage
+            val effectiveBatteryPercentage = when {
+                bmsPercentage != null && bmsPercentage in 0..100 -> bmsPercentage
+                decodedOsd != null && decodedOsd.batteryPercentage in 1..100 -> decodedOsd.batteryPercentage
+                else -> currentState.flightControllerTelemetry?.batteryPercentage ?: 0
+            }
+            val updatedTelemetry = when {
+                decodedOsd != null -> decodedOsd.copy(batteryPercentage = effectiveBatteryPercentage)
+                effectiveBatteryPercentage > 0 && currentState.flightControllerTelemetry != null -> {
+                    currentState.flightControllerTelemetry.copy(batteryPercentage = effectiveBatteryPercentage)
+                }
+                else -> currentState.flightControllerTelemetry
+            }
             currentState.copy(
                 phoneBridgeIp = senderHost ?: currentState.phoneBridgeIp,
                 heartbeatsSent = heartbeatsSentCounter.get(),
@@ -408,7 +431,8 @@ class UdpBridgeReceiver(
                 dumlFramesReceived = currentState.dumlFramesReceived + 1L,
                 lastSourceModule = sourceLabel,
                 remoteControllerAxes = decodedAxes ?: currentState.remoteControllerAxes,
-                flightControllerTelemetry = decodedOsd ?: currentState.flightControllerTelemetry,
+                flightControllerTelemetry = updatedTelemetry,
+                batteryTelemetry = updatedBattery,
                 lastSocketError = lastErrorText,
             )
         }
