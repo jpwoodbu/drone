@@ -49,6 +49,7 @@ data class MirrorReceiverState(
     val flightControllerTelemetry: FlightControllerTelemetry? = null,
     val batteryTelemetry: BatteryTelemetry? = null,
     val gimbalTelemetry: GimbalTelemetry? = null,
+    val altitudeUnit: AltitudeUnit = AltitudeUnit.METERS,
     val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
 )
 
@@ -74,13 +75,26 @@ class UdpBridgeReceiver(
         sharedPreferences.getString(_preferencePhoneBridgeIp, "")?.trim().orEmpty()
 
     @Volatile
+    private var currentAltitudeUnit: AltitudeUnit = run {
+        val saved = sharedPreferences.getString(_preferenceAltitudeUnit, AltitudeUnit.METERS.name)
+        try {
+            AltitudeUnit.valueOf(saved ?: AltitudeUnit.METERS.name)
+        } catch (_: IllegalArgumentException) {
+            AltitudeUnit.METERS
+        }
+    }
+
+    @Volatile
     private var socketStatusText: String = "Not started"
 
     @Volatile
     private var lastErrorText: String? = null
 
     private val _receiverState = MutableStateFlow(
-        MirrorReceiverState(configuredPhoneIp = manualPhoneIp),
+        MirrorReceiverState(
+            configuredPhoneIp = manualPhoneIp,
+            altitudeUnit = currentAltitudeUnit,
+        ),
     )
     val receiverState: StateFlow<MirrorReceiverState> = _receiverState.asStateFlow()
 
@@ -136,6 +150,19 @@ class UdpBridgeReceiver(
                 sendDiscoveryHeartbeats(activeSocket)
                 refreshLocalInterfaces()
             }
+        }
+    }
+
+    /**
+     * Updates and persists the display measurement unit for altitude.
+     */
+    fun setAltitudeUnit(unit: AltitudeUnit) {
+        currentAltitudeUnit = unit
+        sharedPreferences.edit()
+            .putString(_preferenceAltitudeUnit, unit.name)
+            .apply()
+        _receiverState.update { currentState ->
+            currentState.copy(altitudeUnit = unit)
         }
     }
 
@@ -489,5 +516,6 @@ class UdpBridgeReceiver(
     companion object {
         private const val _preferencesFileName = "one.woodbury.drone.mirror.preferences"
         private const val _preferencePhoneBridgeIp = "preference_phone_bridge_ip"
+        private const val _preferenceAltitudeUnit = "preference_altitude_unit"
     }
 }

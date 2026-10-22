@@ -125,6 +125,21 @@ To guarantee flight safety and avoid bus contention or flight controller
 interference, no active outbound polling queries are issued for gimbal
 telemetry. The telemetry streams passively across both `:bridge` and `:mirror`.
 
+### Altitude Units and High-Altitude Ceiling Warning
+
+The `:mirror` application supports displaying relative altitude in either
+meters or international feet:
+
+- **Meters Mode**: Formatted with 1 decimal place (e.g. `12.5 m`).
+- **Feet Mode**: Formatted as integer feet (e.g. `400 ft`) to optimize HUD
+  spacing.
+- **Unit Selection**: Can be toggled via the Settings dialog (`⚙`) or by
+  directly tapping the `ALTITUDE` metric in the top HUD bar. The preference is
+  persisted across app sessions.
+- **Ceiling Warning**: When relative altitude reaches or exceeds $400\text{ ft}$
+  ($121.92\text{ m}$), the altitude number turns red (`#F85149`) to alert the
+  pilot to standard ceiling limits.
+
 ---
 
 ## Building and Testing

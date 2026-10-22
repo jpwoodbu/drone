@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -80,6 +83,7 @@ class MirrorMainActivity : ComponentActivity() {
                         state = receiverState,
                         videoDecoder = bridgeReceiver.videoDecoder,
                         onSetPhoneBridgeIp = { ip -> bridgeReceiver.setConfiguredPhoneIp(ip) },
+                        onSetAltitudeUnit = { unit -> bridgeReceiver.setAltitudeUnit(unit) },
                         modifier = Modifier.padding(innerPadding),
                     )
                 }
@@ -98,18 +102,23 @@ fun MirrorCockpitScreen(
     state: MirrorReceiverState,
     videoDecoder: H264VideoDecoder?,
     onSetPhoneBridgeIp: (String) -> Unit,
+    onSetAltitudeUnit: (AltitudeUnit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var showIpConfigDialog by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
 
-    if (showIpConfigDialog) {
-        PhoneBridgeIpDialog(
+    if (showSettingsDialog) {
+        MirrorSettingsDialog(
             configuredIp = state.configuredPhoneIp,
+            altitudeUnit = state.altitudeUnit,
             onApplyPhoneIp = { ipAddress ->
                 onSetPhoneBridgeIp(ipAddress)
-                showIpConfigDialog = false
+                showSettingsDialog = false
             },
-            onDismiss = { showIpConfigDialog = false },
+            onSelectAltitudeUnit = { unit ->
+                onSetAltitudeUnit(unit)
+            },
+            onDismiss = { showSettingsDialog = false },
         )
     }
 
@@ -122,7 +131,15 @@ fun MirrorCockpitScreen(
     ) {
         TopTelemetryHudBar(
             state = state,
-            onOpenIpConfig = { showIpConfigDialog = true },
+            onOpenSettings = { showSettingsDialog = true },
+            onToggleAltitudeUnit = {
+                val nextUnit = if (state.altitudeUnit == AltitudeUnit.METERS) {
+                    AltitudeUnit.FEET
+                } else {
+                    AltitudeUnit.METERS
+                }
+                onSetAltitudeUnit(nextUnit)
+            },
         )
 
         Box(
@@ -237,9 +254,11 @@ fun MirrorCockpitScreen(
 }
 
 @Composable
-private fun PhoneBridgeIpDialog(
+private fun MirrorSettingsDialog(
     configuredIp: String,
+    altitudeUnit: AltitudeUnit,
     onApplyPhoneIp: (String) -> Unit,
+    onSelectAltitudeUnit: (AltitudeUnit) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var textValue by remember(configuredIp) { mutableStateOf(configuredIp) }
@@ -249,15 +268,43 @@ private fun PhoneBridgeIpDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Phone Bridge Connection",
+                text = "Mirror Settings",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text(
-                    text = "The Quest 2 automatically discovers the Phone Bridge over mDNS. If auto-discovery is unavailable on your Wi-Fi network, enter the Phone's IPv4 address below.",
+                    text = "Altitude Display Units",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FilterChip(
+                        selected = altitudeUnit == AltitudeUnit.METERS,
+                        onClick = { onSelectAltitudeUnit(AltitudeUnit.METERS) },
+                        label = { Text("Meters (m)") },
+                    )
+                    FilterChip(
+                        selected = altitudeUnit == AltitudeUnit.FEET,
+                        onClick = { onSelectAltitudeUnit(AltitudeUnit.FEET) },
+                        label = { Text("Feet (ft)") },
+                    )
+                }
+
+                HorizontalDivider()
+
+                Text(
+                    text = "Phone Bridge Connection",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "The app automatically discovers the Phone Bridge over mDNS. If auto-discovery is unavailable on your Wi-Fi network, enter the Phone's IPv4 address below.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -334,7 +381,7 @@ private fun PhoneBridgeIpDialog(
                     }
                 }
                 TextButton(onClick = onDismiss) {
-                    Text(text = "Cancel")
+                    Text(text = "Close")
                 }
             }
         },
@@ -344,10 +391,18 @@ private fun PhoneBridgeIpDialog(
 @Composable
 private fun TopTelemetryHudBar(
     state: MirrorReceiverState,
-    onOpenIpConfig: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onToggleAltitudeUnit: () -> Unit,
 ) {
     val telemetry = state.flightControllerTelemetry
     val axes = state.remoteControllerAxes
+    val altitudeMeters = telemetry?.relativeAltitudeMeters
+    val altitudeText = if (altitudeMeters != null) {
+        AltitudeFormatter.formatAltitude(altitudeMeters, state.altitudeUnit)
+    } else {
+        "—"
+    }
+    val isAltitudeWarning = altitudeMeters != null && AltitudeFormatter.isHighAltitudeWarning(altitudeMeters)
 
     ComposeSurface(
         modifier = Modifier.fillMaxWidth(),
@@ -376,7 +431,7 @@ private fun TopTelemetryHudBar(
                     highlight = state.phoneBridgeIp != null,
                 )
                 IconButton(
-                    onClick = onOpenIpConfig,
+                    onClick = onOpenSettings,
                     modifier = Modifier.size(28.dp),
                 ) {
                     Text(
@@ -394,7 +449,9 @@ private fun TopTelemetryHudBar(
             )
             HudMetricItem(
                 label = "ALTITUDE",
-                value = if (telemetry != null) "%.1f m".format(telemetry.relativeAltitudeMeters) else "—",
+                value = altitudeText,
+                valueColor = if (isAltitudeWarning) Color(0xFFF85149) else null,
+                onClick = onToggleAltitudeUnit,
             )
             HudMetricItem(
                 label = "GPS SATS",
@@ -469,8 +526,20 @@ private fun HudMetricItem(
     label: String,
     value: String,
     highlight: Boolean = false,
+    valueColor: Color? = null,
+    onClick: (() -> Unit)? = null,
 ) {
-    Column(horizontalAlignment = Alignment.Start) {
+    Column(
+        horizontalAlignment = Alignment.Start,
+        modifier = if (onClick != null) {
+            Modifier
+                .clip(RoundedCornerShape(4.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 4.dp, vertical = 2.dp)
+        } else {
+            Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+        },
+    ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
@@ -482,7 +551,7 @@ private fun HudMetricItem(
             style = MaterialTheme.typography.bodyMedium,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
-            color = if (highlight) Color(0xFF58A6FF) else Color.White,
+            color = valueColor ?: if (highlight) Color(0xFF58A6FF) else Color.White,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
