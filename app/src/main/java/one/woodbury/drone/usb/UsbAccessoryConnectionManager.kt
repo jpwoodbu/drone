@@ -237,13 +237,6 @@ class UsbAccessoryConnectionManager(
     }
 
     /**
-     * Updates and persists the manual Quest 2 IPv4 target on the UDP bridge.
-     */
-    fun setConfiguredQuestIp(ipAddress: String) {
-        udpBridgeSender.setConfiguredQuestIp(ipAddress)
-    }
-
-    /**
      * Releases all resources when the owning activity is destroyed.
      */
     fun shutdown() {

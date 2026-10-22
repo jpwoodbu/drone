@@ -25,7 +25,6 @@ data class UdpBridgeSenderMetrics(
     val nsdStatus: String = "Not registered",
     val lastSocketError: String? = null,
     val localIpv4Addresses: List<String> = emptyList(),
-    val configuredQuestIp: String = "",
     val activeSubscribers: List<String> = emptyList(),
     val announcePacketsSent: Long = 0L,
     val udpPacketsSent: Long = 0L,
@@ -36,18 +35,13 @@ data class UdpBridgeSenderMetrics(
 /**
  * Listens on UDP port [UdpBridgeProtocol.UDP_BRIDGE_PORT] (`5600`) for `"DJIH"` discovery
  * heartbeats from the Meta Quest 2 (`:mirror`), sends periodic `"DJIB"` bridge announcements
- * to active subscribers or a configured Quest 2 IP, and forwards MTU-safe
- * `"DJID"` H.264 video and DUML v1 telemetry packets to the Quest 2.
+ * to active subscribers, and forwards MTU-safe `"DJID"` H.264 video and DUML v1 telemetry
+ * packets to the Quest 2.
  */
 class UdpBridgeSender(
     private val applicationContext: Context,
     private val onMetricsChanged: (UdpBridgeSenderMetrics) -> Unit,
 ) {
-    private val sharedPreferences = applicationContext.getSharedPreferences(
-        _preferencesFileName,
-        Context.MODE_PRIVATE,
-    )
-
     private val isRunning = AtomicBoolean(false)
     private val sequenceCounter = AtomicInteger(1)
     private val outgoingDatagramQueue = LinkedBlockingQueue<ByteArray>(1024)
@@ -57,13 +51,6 @@ class UdpBridgeSender(
     private val packetsSentCounter = AtomicLong(0L)
     private val bytesSentCounter = AtomicLong(0L)
     private val heartbeatsReceivedCounter = AtomicLong(0L)
-
-    @Volatile
-    private var manualQuestIp: String =
-        sharedPreferences.getString(_preferenceQuestViewerIp, "")?.trim().orEmpty()
-
-    @Volatile
-    private var manualQuestInetAddress: InetAddress? = null
 
     @Volatile
     private var socketStatusText: String = "Not started"
@@ -99,31 +86,6 @@ class UdpBridgeSender(
 
     init {
         publishMetrics()
-    }
-
-    /**
-     * Updates and persists the manual Quest 2 IPv4 address. Passing an empty string clears
-     * the manual IP and relies on automatic discovery.
-     */
-    fun setConfiguredQuestIp(ipAddress: String) {
-        val sanitized = ipAddress.trim()
-        manualQuestIp = sanitized
-        manualQuestInetAddress = null
-        sharedPreferences.edit()
-            .putString(_preferenceQuestViewerIp, sanitized)
-            .apply()
-        lastErrorText = null
-        publishMetrics()
-
-        val activeSocket = udpSocket
-        val scheduler = announceScheduler
-        if (activeSocket != null && scheduler != null && !scheduler.isShutdown) {
-            scheduler.execute {
-                resolveManualQuestAddressIfNeeded()
-                broadcastBridgeAnnounce(activeSocket)
-                publishMetrics()
-            }
-        }
     }
 
     /**
@@ -164,7 +126,6 @@ class UdpBridgeSender(
             announceScheduler = scheduler
             scheduler.scheduleAtFixedRate(
                 {
-                    resolveManualQuestAddressIfNeeded()
                     broadcastBridgeAnnounce(socket)
                 },
                 0L,
@@ -233,7 +194,7 @@ class UdpBridgeSender(
 
     /**
      * Packetizes and enqueues a raw H.264 Annex-B video chunk (`0x574A`) for transmission
-     * if at least one Quest 2 subscriber or manual Quest 2 IP is active.
+     * if at least one Quest 2 subscriber is active.
      */
     fun enqueueVideoChunk(videoChunk: ByteArray) {
         if (!isRunning.get() || !hasAnyDestination() || videoChunk.isEmpty()) {
@@ -244,7 +205,7 @@ class UdpBridgeSender(
 
     /**
      * Packetizes and enqueues a verified DUML v1 packet (`0x5749`) for transmission
-     * if at least one Quest 2 subscriber or manual Quest 2 IP is active.
+     * if at least one Quest 2 subscriber is active.
      */
     fun enqueueDumlFrameBytes(rawDumlFrame: ByteArray) {
         if (!isRunning.get() || !hasAnyDestination() || rawDumlFrame.isEmpty()) {
@@ -254,27 +215,7 @@ class UdpBridgeSender(
     }
 
     private fun hasAnyDestination(): Boolean {
-        return subscribersByHost.isNotEmpty() || manualQuestIp.isNotEmpty()
-    }
-
-    private fun resolveManualQuestAddressIfNeeded(): InetAddress? {
-        val configured = manualQuestIp
-        if (configured.isEmpty()) {
-            manualQuestInetAddress = null
-            return null
-        }
-        val cached = manualQuestInetAddress
-        if (cached != null && cached.hostAddress == configured) {
-            return cached
-        }
-        return try {
-            val resolved = InetAddress.getByName(configured)
-            manualQuestInetAddress = resolved
-            resolved
-        } catch (exception: Exception) {
-            recordSocketError("resolve($configured)", exception)
-            null
-        }
+        return subscribersByHost.isNotEmpty()
     }
 
     private fun enqueueChannelPayload(channelType: Int, payload: ByteArray) {
@@ -292,41 +233,22 @@ class UdpBridgeSender(
     }
 
     private fun broadcastBridgeAnnounce(socket: DatagramSocket) {
-        if (!isRunning.get()) return
+        if (!isRunning.get() || subscribersByHost.isEmpty()) return
         val announceBytes = UdpBridgeProtocol.buildBridgeAnnouncePacket()
-        val targetAddresses = LinkedHashSet<String>()
-
-        val configured = manualQuestIp
-        if (configured.isNotEmpty()) {
-            targetAddresses.add(configured)
-        } else {
-            // Unicast announcement / keepalive to any active Quest 2 subscribers.
-            for (subscriber in subscribersByHost.values) {
-                val host = subscriber.address.hostAddress
-                if (host != null) {
-                    targetAddresses.add(host)
-                }
-            }
-        }
-
-        if (targetAddresses.isEmpty()) return
 
         var sentAny = false
-        for (host in targetAddresses) {
+        for (subscriber in subscribersByHost.values) {
             try {
-                val destination = InetAddress.getByName(host)
                 val packet = DatagramPacket(
                     announceBytes,
                     announceBytes.size,
-                    destination,
+                    subscriber.address,
                     UdpBridgeProtocol.UDP_BRIDGE_PORT,
                 )
                 socket.send(packet)
                 sentAny = true
-            } catch (exception: Exception) {
-                if (host == configured && configured.isNotEmpty()) {
-                    recordSocketError("send($host)", exception)
-                }
+            } catch (_: Exception) {
+                // Best-effort keepalive packet sent to active subscribers.
             }
         }
         if (sentAny) {
@@ -389,12 +311,6 @@ class UdpBridgeSender(
                         continue
                     }
                     destinations[hostKey] = subscriber.address
-                }
-
-                val manualAddress = resolveManualQuestAddressIfNeeded()
-                if (manualAddress != null) {
-                    val hostKey = manualAddress.hostAddress ?: manualQuestIp
-                    destinations[hostKey] = manualAddress
                 }
 
                 if (destinations.isEmpty()) continue
@@ -483,7 +399,6 @@ class UdpBridgeSender(
                 nsdStatus = nsdStatusText,
                 lastSocketError = lastErrorText,
                 localIpv4Addresses = localEndpoints,
-                configuredQuestIp = manualQuestIp,
                 activeSubscribers = activeSubscriberHosts,
                 announcePacketsSent = announceSentCounter.get(),
                 udpPacketsSent = packetsSentCounter.get(),
@@ -491,10 +406,5 @@ class UdpBridgeSender(
                 heartbeatsReceived = heartbeatsReceivedCounter.get(),
             ),
         )
-    }
-
-    companion object {
-        private const val _preferencesFileName = "one.woodbury.drone.bridge.preferences"
-        private const val _preferenceQuestViewerIp = "preference_quest_viewer_ip"
     }
 }
