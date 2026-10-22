@@ -509,8 +509,9 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
 
             val telemetry = state.flightControllerTelemetry
             val battery = state.batteryTelemetry
+            val gimbal = state.gimbalTelemetry
             val batteryPercentage = battery?.percentage ?: telemetry?.batteryPercentage?.takeIf { it > 0 }
-            if (telemetry != null || battery != null) {
+            if (telemetry != null || battery != null || gimbal != null) {
                 Text(
                     text = "Aircraft OSD Telemetry",
                     style = MaterialTheme.typography.labelLarge,
@@ -545,6 +546,20 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                     if (battery.temperatureCelsius != null) {
                         KeyValueRow(label = "Battery Temp", value = "%.1f °C".format(battery.temperatureCelsius))
                     }
+                }
+                if (gimbal != null) {
+                    KeyValueRow(
+                        label = "Gimbal Pitch",
+                        value = "%.1f°".format(gimbal.pitchDegrees),
+                    )
+                    KeyValueRow(
+                        label = "Gimbal Attitude (P / R / Y)",
+                        value = "%.1f° / %.1f° / %.1f°".format(
+                            gimbal.pitchDegrees,
+                            gimbal.rollDegrees,
+                            gimbal.yawDegrees,
+                        ),
+                    )
                 }
                 if (telemetry != null) {
                     KeyValueRow(label = "GPS Satellites", value = telemetry.gpsSatellites.toString())

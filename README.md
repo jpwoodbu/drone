@@ -112,6 +112,19 @@ remaining capacity reporting across varying flight loads and battery wear.
 Last-known BMS percentages are preserved across high-frequency cell voltage
 packets (`0x03`).
 
+### Camera Gimbal Telemetry
+
+Camera gimbal telemetry (physical pitch, roll, and yaw angles) is decoded
+passively from unsolicited DUML push packets (`CMD_GIMBAL_PUSH_STATUS` =
+`0x05` from `MODULE_GIMBAL` `0x04`). Angles are encoded as 16-bit signed
+little-endian integers with $0.1^\circ$ precision ($0^\circ$ corresponds to
+level horizon, and negative angles down to $-90^\circ$ correspond to tilting
+downward toward nadir).
+
+To guarantee flight safety and avoid bus contention or flight controller
+interference, no active outbound polling queries are issued for gimbal
+telemetry. The telemetry streams passively across both `:bridge` and `:mirror`.
+
 ---
 
 ## Building and Testing

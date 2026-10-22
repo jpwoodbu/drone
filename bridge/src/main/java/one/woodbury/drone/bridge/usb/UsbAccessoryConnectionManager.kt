@@ -35,6 +35,7 @@ import one.woodbury.drone.protocol.BatteryTelemetry
 import one.woodbury.drone.protocol.DumlFrame
 import one.woodbury.drone.protocol.DumlProtocol
 import one.woodbury.drone.protocol.FlightControllerTelemetry
+import one.woodbury.drone.protocol.GimbalTelemetry
 import one.woodbury.drone.protocol.RemoteControllerAxes
 import one.woodbury.drone.video.H264VideoDecoder
 import one.woodbury.drone.video.VideoDecoderMetrics
@@ -90,6 +91,7 @@ data class ControllerConnectionState(
     val remoteControllerAxes: RemoteControllerAxes? = null,
     val flightControllerTelemetry: FlightControllerTelemetry? = null,
     val batteryTelemetry: BatteryTelemetry? = null,
+    val gimbalTelemetry: GimbalTelemetry? = null,
     val lastDumlPacket: LastDumlPacketInfo? = null,
     val lastRawHexPreview: String? = null,
     val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
@@ -373,6 +375,7 @@ class UsbAccessoryConnectionManager(
         val decodedOsd = DumlProtocol.decodeFlightControllerOsdTelemetry(frame)
         val decodedBattery = DumlProtocol.decodeBatteryTelemetry(frame)
         val decodedAxes = DumlProtocol.decodeRemoteControllerAxes(frame)
+        val decodedGimbal = DumlProtocol.decodeGimbalTelemetry(frame)
         val decodedVersion = DumlProtocol.decodeDeviceVersionString(frame)
 
         _connectionState.update { currentState ->
@@ -409,6 +412,7 @@ class UsbAccessoryConnectionManager(
                 remoteControllerAxes = decodedAxes ?: currentState.remoteControllerAxes,
                 flightControllerTelemetry = updatedTelemetry,
                 batteryTelemetry = updatedBattery,
+                gimbalTelemetry = decodedGimbal ?: currentState.gimbalTelemetry,
                 lastDumlPacket = packetInfo,
             )
         }

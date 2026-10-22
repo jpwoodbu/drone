@@ -23,6 +23,7 @@ import one.woodbury.drone.protocol.DumlFrame
 import one.woodbury.drone.protocol.DumlParseOutcome
 import one.woodbury.drone.protocol.DumlProtocol
 import one.woodbury.drone.protocol.FlightControllerTelemetry
+import one.woodbury.drone.protocol.GimbalTelemetry
 import one.woodbury.drone.protocol.RemoteControllerAxes
 import one.woodbury.drone.video.H264VideoDecoder
 import one.woodbury.drone.video.VideoDecoderMetrics
@@ -47,6 +48,7 @@ data class MirrorReceiverState(
     val remoteControllerAxes: RemoteControllerAxes? = null,
     val flightControllerTelemetry: FlightControllerTelemetry? = null,
     val batteryTelemetry: BatteryTelemetry? = null,
+    val gimbalTelemetry: GimbalTelemetry? = null,
     val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
 )
 
@@ -400,6 +402,7 @@ class UdpBridgeReceiver(
         val decodedOsd = DumlProtocol.decodeFlightControllerOsdTelemetry(frame)
         val decodedBattery = DumlProtocol.decodeBatteryTelemetry(frame)
         val decodedAxes = DumlProtocol.decodeRemoteControllerAxes(frame)
+        val decodedGimbal = DumlProtocol.decodeGimbalTelemetry(frame)
 
         _receiverState.update { currentState ->
             val updatedBattery = when {
@@ -433,6 +436,7 @@ class UdpBridgeReceiver(
                 remoteControllerAxes = decodedAxes ?: currentState.remoteControllerAxes,
                 flightControllerTelemetry = updatedTelemetry,
                 batteryTelemetry = updatedBattery,
+                gimbalTelemetry = decodedGimbal ?: currentState.gimbalTelemetry,
                 lastSocketError = lastErrorText,
             )
         }

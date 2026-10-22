@@ -412,6 +412,11 @@ private fun TopTelemetryHudBar(
                     "—"
                 },
             )
+            val gimbal = state.gimbalTelemetry
+            HudMetricItem(
+                label = "GIMBAL",
+                value = if (gimbal != null) "%.0f°".format(gimbal.pitchDegrees) else "—",
+            )
             HudMetricItem(
                 label = "RC STICKS (L/R)",
                 value = if (axes != null) {

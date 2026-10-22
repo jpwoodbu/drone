@@ -42,6 +42,10 @@ object DumlProtocol {
     const val CMD_BATTERY_CELL_VOLTAGE: Int = 0x03
     const val CMD_BATTERY_COMMON: Int = 0x06
 
+    /** DUML command IDs for camera gimbal management. */
+    const val CMD_GIMBAL_CONTROL: Int = 0x01
+    const val CMD_GIMBAL_PUSH_STATUS: Int = 0x05
+
     /** DUML command types. */
     const val COMMAND_TYPE_REQUEST_WITH_ACK: Int = 0x40
     const val COMMAND_TYPE_RESPONSE_ACK: Int = 0x80
@@ -631,6 +635,50 @@ object DumlProtocol {
     }
 
     /**
+     * Decodes a Camera Gimbal telemetry packet (`commandSet = 0x04` or `sourceModuleId = 0x04`).
+     *
+     * In DUML v1, the gimbal controller streams unsolicited telemetry packets (typically `commandId = 0x05`)
+     * containing physical pitch, roll, and yaw angles as little-endian signed 16-bit integers with 0.1° scaling.
+     * Negative pitch corresponds to downward tilt toward the ground, while 0° corresponds to level horizon.
+     */
+    fun decodeGimbalTelemetry(frame: DumlFrame): GimbalTelemetry? {
+        val isGimbalSubsystem = frame.commandSet == MODULE_GIMBAL ||
+            (frame.sourceModuleId and 0x1F) == MODULE_GIMBAL
+        if (!isGimbalSubsystem) {
+            return null
+        }
+        if (frame.commandId != CMD_GIMBAL_PUSH_STATUS && frame.commandId != CMD_GIMBAL_CONTROL) {
+            return null
+        }
+        val payload = frame.payload
+        if (payload.size < 6) {
+            return null
+        }
+
+        val byteBuffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+        val rawPitch = byteBuffer.getShort(0).toInt()
+        val rawRoll = byteBuffer.getShort(2).toInt()
+        val rawYaw = byteBuffer.getShort(4).toInt()
+
+        val pitchDegrees = rawPitch * 0.1f
+        val rollDegrees = rawRoll * 0.1f
+        val yawDegrees = rawYaw * 0.1f
+
+        if (pitchDegrees !in -135.0f..90.0f || rollDegrees !in -90.0f..90.0f || yawDegrees !in -360.0f..360.0f) {
+            return null
+        }
+
+        val mode = if (payload.size >= 7) payload[6].toInt() and 0xFF else null
+
+        return GimbalTelemetry(
+            pitchDegrees = pitchDegrees,
+            rollDegrees = rollDegrees,
+            yawDegrees = yawDegrees,
+            mode = mode,
+        )
+    }
+
+    /**
      * Extracts a readable hardware/firmware version string from a `0x00/0x01` version response.
      */
     fun decodeDeviceVersionString(frame: DumlFrame): String? {
@@ -738,6 +786,16 @@ data class RemoteControllerAxes(
     val leftStickVertical: Int,
     val leftStickHorizontal: Int,
     val gimbalWheel: Int,
+)
+
+/**
+ * Camera Gimbal telemetry (`commandSet = 0x04` or `module = 0x04`).
+ */
+data class GimbalTelemetry(
+    val pitchDegrees: Float,
+    val rollDegrees: Float,
+    val yawDegrees: Float,
+    val mode: Int? = null,
 )
 
 /**

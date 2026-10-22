@@ -340,6 +340,123 @@ class DumlProtocolTest {
     }
 
     @Test
+    fun decodeGimbalTelemetry_extractsPitchRollYawAndMode() {
+        val payload = ByteBuffer.allocate(7).order(ByteOrder.LITTLE_ENDIAN).apply {
+            putShort((-450).toShort()) // -45.0 degrees pitch
+            putShort(12.toShort())     // +1.2 degrees roll
+            putShort((-50).toShort())  // -5.0 degrees yaw
+            put(0x02.toByte())         // mode 2
+        }.array()
+
+        val frame = DumlFrame(
+            sourceModuleId = DumlProtocol.MODULE_GIMBAL,
+            destinationModuleId = DumlProtocol.MODULE_MOBILE_APP,
+            sequenceNumber = 42,
+            commandType = 0x00,
+            commandSet = DumlProtocol.MODULE_GIMBAL,
+            commandId = DumlProtocol.CMD_GIMBAL_PUSH_STATUS,
+            payload = payload,
+        )
+
+        val telemetry = DumlProtocol.decodeGimbalTelemetry(frame)
+        assertNotNull(telemetry)
+        assertEquals(-45.0f, telemetry!!.pitchDegrees, 0.01f)
+        assertEquals(1.2f, telemetry.rollDegrees, 0.01f)
+        assertEquals(-5.0f, telemetry.yawDegrees, 0.01f)
+        assertEquals(2, telemetry.mode)
+    }
+
+    @Test
+    fun decodeGimbalTelemetry_handlesLevelHorizonAndNadir() {
+        val levelPayload = ByteBuffer.allocate(6).order(ByteOrder.LITTLE_ENDIAN).apply {
+            putShort(0.toShort())
+            putShort(0.toShort())
+            putShort(0.toShort())
+        }.array()
+
+        val levelFrame = DumlFrame(
+            sourceModuleId = DumlProtocol.MODULE_GIMBAL,
+            destinationModuleId = DumlProtocol.MODULE_MOBILE_APP,
+            sequenceNumber = 43,
+            commandType = 0x00,
+            commandSet = DumlProtocol.MODULE_GIMBAL,
+            commandId = DumlProtocol.CMD_GIMBAL_PUSH_STATUS,
+            payload = levelPayload,
+        )
+        val levelTelemetry = DumlProtocol.decodeGimbalTelemetry(levelFrame)
+        assertNotNull(levelTelemetry)
+        assertEquals(0.0f, levelTelemetry!!.pitchDegrees, 0.01f)
+        assertNull(levelTelemetry.mode)
+
+        val nadirPayload = ByteBuffer.allocate(6).order(ByteOrder.LITTLE_ENDIAN).apply {
+            putShort((-900).toShort()) // -90.0 degrees (straight down)
+            putShort(0.toShort())
+            putShort(0.toShort())
+        }.array()
+
+        val nadirFrame = DumlFrame(
+            sourceModuleId = DumlProtocol.MODULE_GIMBAL,
+            destinationModuleId = DumlProtocol.MODULE_MOBILE_APP,
+            sequenceNumber = 44,
+            commandType = 0x00,
+            commandSet = DumlProtocol.MODULE_GIMBAL,
+            commandId = DumlProtocol.CMD_GIMBAL_PUSH_STATUS,
+            payload = nadirPayload,
+        )
+        val nadirTelemetry = DumlProtocol.decodeGimbalTelemetry(nadirFrame)
+        assertNotNull(nadirTelemetry)
+        assertEquals(-90.0f, nadirTelemetry!!.pitchDegrees, 0.01f)
+    }
+
+    @Test
+    fun decodeGimbalTelemetry_returnsNullForNonGimbalFramesOrCorruptPayloads() {
+        val validPayload = ByteBuffer.allocate(6).order(ByteOrder.LITTLE_ENDIAN).apply {
+            putShort((-300).toShort())
+            putShort(0.toShort())
+            putShort(0.toShort())
+        }.array()
+
+        val nonGimbalFrame = DumlFrame(
+            sourceModuleId = DumlProtocol.MODULE_FLIGHT_CONTROLLER,
+            destinationModuleId = DumlProtocol.MODULE_MOBILE_APP,
+            sequenceNumber = 45,
+            commandType = 0x00,
+            commandSet = DumlProtocol.MODULE_FLIGHT_CONTROLLER,
+            commandId = 0x43,
+            payload = validPayload,
+        )
+        assertNull(DumlProtocol.decodeGimbalTelemetry(nonGimbalFrame))
+
+        val shortPayloadFrame = DumlFrame(
+            sourceModuleId = DumlProtocol.MODULE_GIMBAL,
+            destinationModuleId = DumlProtocol.MODULE_MOBILE_APP,
+            sequenceNumber = 46,
+            commandType = 0x00,
+            commandSet = DumlProtocol.MODULE_GIMBAL,
+            commandId = DumlProtocol.CMD_GIMBAL_PUSH_STATUS,
+            payload = byteArrayOf(0x01, 0x02, 0x03, 0x04, 0x05),
+        )
+        assertNull(DumlProtocol.decodeGimbalTelemetry(shortPayloadFrame))
+
+        val outOfRangePayload = ByteBuffer.allocate(6).order(ByteOrder.LITTLE_ENDIAN).apply {
+            putShort((-2000).toShort()) // -200.0 degrees (out of plausible range)
+            putShort(0.toShort())
+            putShort(0.toShort())
+        }.array()
+
+        val outOfRangeFrame = DumlFrame(
+            sourceModuleId = DumlProtocol.MODULE_GIMBAL,
+            destinationModuleId = DumlProtocol.MODULE_MOBILE_APP,
+            sequenceNumber = 47,
+            commandType = 0x00,
+            commandSet = DumlProtocol.MODULE_GIMBAL,
+            commandId = DumlProtocol.CMD_GIMBAL_PUSH_STATUS,
+            payload = outOfRangePayload,
+        )
+        assertNull(DumlProtocol.decodeGimbalTelemetry(outOfRangeFrame))
+    }
+
+    @Test
     fun h264AnnexBStreamExtractor_stripsDjiSeiAndGroupsMultiSliceAccessUnits() {
         val emittedAccessUnits = mutableListOf<Pair<ByteArray, Boolean>>()
         val extractor = one.woodbury.drone.video.H264AnnexBStreamExtractor { bytes, isKeyframe ->
