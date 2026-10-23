@@ -141,6 +141,57 @@ class DumlProtocolTest {
     }
 
     @Test
+    fun decodeFlightControllerOsdTelemetry_mapsFlightModesCorrectly() {
+        fun makeOsdFrame(modeByte: Int): DumlFrame {
+            val payload = ByteArray(42)
+            payload[30] = modeByte.toByte()
+            return DumlFrame(
+                sourceModuleId = DumlProtocol.MODULE_FLIGHT_CONTROLLER,
+                destinationModuleId = DumlProtocol.MODULE_MOBILE_APP,
+                sequenceNumber = 1,
+                commandType = 0x00,
+                commandSet = DumlProtocol.MODULE_FLIGHT_CONTROLLER,
+                commandId = 0x43,
+                payload = payload,
+            )
+        }
+
+        // Mode 6 is GPSAtti (standard Positioning mode)
+        val pGps = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(6))
+        assertNotNull(pGps)
+        assertEquals("P-GPS", pGps!!.flightMode)
+        assertFalse(pGps.isSportMode)
+
+        // Mode 31 is GPSSport (Sport mode)
+        val sport = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(31))
+        assertNotNull(sport)
+        assertEquals("SPORT", sport!!.flightMode)
+        assertTrue(sport.isSportMode)
+
+        // Mode 7 is Course Lock
+        val cl = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(7))
+        assertNotNull(cl)
+        assertEquals("GPS-CL", cl!!.flightMode)
+
+        // Mode 11 is AutoTakeoff
+        val takeoff = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(11))
+        assertNotNull(takeoff)
+        assertEquals("AUTO-TAKEOFF", takeoff!!.flightMode)
+
+        // Mode 12 is AutoLanding
+        val land = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(12))
+        assertNotNull(land)
+        assertEquals("AUTO-LAND", land!!.flightMode)
+        assertTrue(land.isAutoLanding)
+
+        // Mode 15 is GoHome / RTH
+        val rth = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(15))
+        assertNotNull(rth)
+        assertEquals("RTH", rth!!.flightMode)
+        assertTrue(rth.isRthActive)
+    }
+
+    @Test
     fun decodeRemoteControllerAxes_extractsSticksAndGimbalWheel() {
         val payload = ByteArray(10)
         val buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)

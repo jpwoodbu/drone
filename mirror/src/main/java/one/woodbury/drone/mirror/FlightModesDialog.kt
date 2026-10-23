@@ -54,14 +54,14 @@ fun FlightModesDialog(
                 }
 
                 FlightModeItem(
-                    name = "P-GPS (Mode 5)",
+                    name = "P-GPS (Mode 5 & 6)",
                     summary = "Positioning Mode (GPS)",
-                    description = "The flight controller uses GPS satellites and IMUs to hold precise 3D position and hover automatically when control sticks are centered. Steering is nose-relative: pushing forward on the pitch stick flies in the direction the aircraft's nose points.",
+                    description = "The flight controller uses GPS satellites and IMUs to hold precise 3D position and hover automatically when control sticks are centered. Steering is nose-relative: pushing forward on the pitch stick flies in the direction the aircraft's nose points. Commercial DJI apps (DJI Fly/GO) group both Mode 5 (GPS Brake) and Mode 6 (GPS Attitude hold) under the name 'P-GPS'.",
                 )
                 FlightModeItem(
-                    name = "GPS-CL (Mode 6)",
+                    name = "GPS-CL (Mode 7)",
                     summary = "Positioning Mode (Course Lock)",
-                    description = "Full GPS positioning and hover stabilization are active, but control stick steering is locked to a reference compass heading. Pushing forward flies along the locked heading regardless of which way the drone's nose is facing. Commercial DJI apps (DJI Fly/GO) group both Mode 5 and Mode 6 under the umbrella name 'P-GPS'.",
+                    description = "Full GPS positioning and hover stabilization are active, but control stick steering is locked to a reference compass heading. Pushing forward flies along the locked heading regardless of which way the drone's nose is facing.",
                 )
                 FlightModeItem(
                     name = "P-OPTI / OPTI (Mode 4)",
@@ -74,29 +74,29 @@ fun FlightModesDialog(
                     description = "Neither GPS nor vision positioning is used for horizontal hold. The barometer maintains altitude, but the aircraft drifts with wind and momentum. The pilot must manually correct for drift.",
                 )
                 FlightModeItem(
-                    name = "SPORT (Mode 24)",
+                    name = "SPORT (Mode 31)",
                     summary = "Sport Mode",
                     description = "Retains GPS positioning but increases max pitch angle and response speed up to 42 mph (68 km/h). Vision positioning and obstacle avoidance are disabled.",
                 )
                 FlightModeItem(
-                    name = "RTH (Mode 14)",
+                    name = "RTH (Mode 15)",
                     summary = "Return to Home",
                     description = "Automated failsafe or pilot-commanded flight back to the recorded Home Point. The aircraft climbs to the preset RTH altitude, flies back, and lands automatically.",
                 )
                 FlightModeItem(
-                    name = "AUTO-LAND (Mode 11)",
+                    name = "AUTO-LAND (Mode 12)",
                     summary = "Automated Landing",
                     description = "Automated descent at a controlled vertical rate, shutting off motors upon ground contact.",
                 )
                 FlightModeItem(
-                    name = "AUTO-TAKEOFF (Mode 10)",
+                    name = "AUTO-TAKEOFF (Mode 10 & 11)",
                     summary = "Automated Takeoff",
                     description = "Automated motor start and ascent to a stable hover at approximately 1.2 meters (4 feet).",
                 )
                 FlightModeItem(
-                    name = "CINEMA / TRIPOD (Mode 17)",
-                    summary = "Cinematic Mode",
-                    description = "Dampens control stick sensitivity and caps maximum flight speed for smooth, cinematic video recording.",
+                    name = "TRIPOD (Mode 38)",
+                    summary = "Tripod Mode",
+                    description = "Dampens control stick sensitivity and caps maximum flight speed for smooth, stable video recording.",
                 )
             }
         },

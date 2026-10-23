@@ -381,11 +381,11 @@ object DumlProtocol {
         val batteryPercentage = payload[40].toInt() and 0xFF
         val motorsOn = (controllerStateFlags and 0x08) != 0
         val inAir = (controllerStateFlags and 0x04) != 0
-        val rthActive = (controllerStateFlags and 0x20) != 0 || modeByte == 14
-        val autoLanding = (controllerStateFlags and 0x80) != 0 || modeByte == 11
+        val rthActive = (controllerStateFlags and 0x20) != 0 || modeByte == 14 || modeByte == 15 || modeByte == 26
+        val autoLanding = (controllerStateFlags and 0x80) != 0 || modeByte == 11 || modeByte == 12 || modeByte == 27
         val lowBatteryWarning = false
         val compassError = (controllerStateFlags and 0x400) != 0
-        val sportMode = (controllerStateFlags and 0x800) != 0 || modeByte == 24
+        val sportMode = (controllerStateFlags and 0x800) != 0 || modeByte == 31 || modeByte == 24
 
         val rawUltrasonic = if (payload.size >= 40) {
             byteBuffer.getShort(38).toInt() and 0xFFFF
@@ -400,26 +400,29 @@ object DumlProtocol {
         }
 
         val flightMode = when (modeByte) {
+            0 -> "MANUAL"
             1 -> "ATTI"
             2 -> "ATTI-CL"
             3 -> "ATTI-HOVER"
-            4 -> "P-GO"
-            5 -> "P-GPS"
-            6 -> "GPS-CL"
-            7 -> "GPS-HOME"
-            8 -> "GPS-HOTPOINT"
-            9 -> "ASSIST-TAKEOFF"
-            10 -> "AUTO-TAKEOFF"
-            11 -> "AUTO-LAND"
-            12 -> "ATTI-LAND"
-            13 -> "NAVI-GO"
-            14 -> "RTH"
-            15 -> "CLICK-GO"
-            16 -> "JOYSTICK"
-            17 -> "CINEMA"
-            18 -> "ATTI-LIMITED"
-            24 -> "SPORT"
+            4 -> "HOVER"
+            5, 6 -> "P-GPS"
+            7 -> "GPS-CL"
+            8 -> "GPS-HL"
+            9 -> "GPS-HOTPOINT"
+            10, 11 -> "AUTO-TAKEOFF"
+            12, 27 -> "AUTO-LAND"
+            13, 34 -> "ATTI-LAND"
+            14, 29 -> "WAYPOINT"
+            15, 26 -> "RTH"
+            16, 28 -> "CLICK-GO"
+            17, 30 -> "JOYSTICK"
+            23 -> "ATTI-LIMITED"
+            24, 31 -> "SPORT"
             25 -> "FOLLOW-ME"
+            32 -> "NOVICE"
+            33 -> "P-LIMITED"
+            38 -> "TRIPOD"
+            41 -> "MOTORS-START"
             else -> if (sportMode) "SPORT" else if (rthActive) "RTH" else if (autoLanding) "AUTO-LAND" else "P-GPS"
         }
 
