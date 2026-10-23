@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,8 +32,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -73,8 +78,9 @@ class MainActivity : ComponentActivity() {
                     ControllerDiagnosticsScreen(
                         state = connectionState,
                         videoDecoder = connectionManager.videoDecoder,
-                        onScanClicked = { connectionManager.scanAndConnect() },
-                        onQueryVersionClicked = { connectionManager.sendVersionQuery() },
+                        onSetVideoPreviewEnabled = { isEnabled ->
+                            connectionManager.isVideoPreviewEnabled = isEnabled
+                        },
                         onDisconnectSubscribersClicked = { connectionManager.disconnectAllSubscribers() },
                         onResumeSubscribersClicked = { connectionManager.resumeSubscribers() },
                         modifier = Modifier.padding(innerPadding),
@@ -105,8 +111,7 @@ class MainActivity : ComponentActivity() {
 fun ControllerDiagnosticsScreen(
     state: ControllerConnectionState,
     videoDecoder: H264VideoDecoder? = null,
-    onScanClicked: () -> Unit,
-    onQueryVersionClicked: () -> Unit,
+    onSetVideoPreviewEnabled: (Boolean) -> Unit,
     onDisconnectSubscribersClicked: () -> Unit,
     onResumeSubscribersClicked: () -> Unit,
     modifier: Modifier = Modifier,
@@ -119,26 +124,25 @@ fun ControllerDiagnosticsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            text = "Mavic Air (S01A) USB Inspector",
+            text = "Mavic Air Bridge",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
         )
 
         ConnectionStatusCard(
             state = state,
-            onScanClicked = onScanClicked,
-            onQueryVersionClicked = onQueryVersionClicked,
         )
 
-        QuestUdpBridgeCard(
+        NetworkServerCard(
             state = state,
             onDisconnectSubscribersClicked = onDisconnectSubscribersClicked,
             onResumeSubscribersClicked = onResumeSubscribersClicked,
         )
 
-        DroneVideoFeedCard(
+        LiveVideoFeedCard(
             state = state,
             videoDecoder = videoDecoder,
+            onSetVideoPreviewEnabled = onSetVideoPreviewEnabled,
         )
 
         UsbDescriptorCard(descriptor = state.accessoryDescriptor)
@@ -150,7 +154,7 @@ fun ControllerDiagnosticsScreen(
 }
 
 @Composable
-private fun QuestUdpBridgeCard(
+private fun NetworkServerCard(
     state: ControllerConnectionState,
     onDisconnectSubscribersClicked: () -> Unit,
     onResumeSubscribersClicked: () -> Unit,
@@ -161,7 +165,7 @@ private fun QuestUdpBridgeCard(
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -169,36 +173,38 @@ private fun QuestUdpBridgeCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Quest 2 UDP Bridge (:5600)",
+                    text = "Network Server",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Text(
-                    text = when {
-                        !bridge.isAcceptingSubscribers -> "PAUSED"
-                        hasActiveTarget -> "STREAMING"
-                        else -> "LISTENING"
-                    },
-                    style = MaterialTheme.typography.labelLarge,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = when {
-                        !bridge.isAcceptingSubscribers -> MaterialTheme.colorScheme.error
-                        hasActiveTarget -> MaterialTheme.colorScheme.primary
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
+                if (!bridge.isAcceptingSubscribers) {
+                    Text(
+                        text = "PAUSED",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else if (hasActiveTarget) {
+                    Text(
+                        text = "STREAMING",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
             HorizontalDivider()
-            KeyValueRow(
+            KeyValueItem(
                 label = "Socket Status",
                 value = bridge.socketStatus,
             )
-            KeyValueRow(
+            KeyValueItem(
                 label = "mDNS Service",
                 value = bridge.nsdStatus,
             )
-            KeyValueRow(
+            KeyValueItem(
                 label = "Phone Local IP(s)",
                 value = if (bridge.localIpv4Addresses.isEmpty()) {
                     "No Wi-Fi / Hotspot IPv4"
@@ -206,37 +212,30 @@ private fun QuestUdpBridgeCard(
                     bridge.localIpv4Addresses.joinToString(", ")
                 },
             )
-            KeyValueRow(
-                label = "Quest 2 Subscriber(s)",
+            KeyValueItem(
+                label = "Mirror Subscribers",
                 value = when {
                     !bridge.isAcceptingSubscribers -> "Subscriptions paused"
                     bridge.activeSubscribers.isNotEmpty() -> bridge.activeSubscribers.joinToString(", ")
-                    else -> "Waiting for Quest 2 heartbeat…"
+                    else -> "Waiting for mirror heartbeat…"
                 },
             )
-            KeyValueRow(
+            KeyValueItem(
                 label = "Pings TX / Heartbeats RX",
                 value = "${bridge.announcePacketsSent} TX / ${bridge.heartbeatsReceived} RX",
             )
-            KeyValueRow(
+            KeyValueItem(
                 label = "UDP Packets Sent",
                 value = "${bridge.udpPacketsSent} (${bridge.udpBytesSent} B)",
             )
-            Text(
-                text = "Last Socket Error",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = bridge.lastSocketError ?: "None",
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                color = if (bridge.lastSocketError != null) {
+            KeyValueItem(
+                label = "Last Socket Error",
+                value = bridge.lastSocketError ?: "None",
+                valueColor = if (bridge.lastSocketError != null) {
                     MaterialTheme.colorScheme.error
                 } else {
                     MaterialTheme.colorScheme.onSurface
                 },
-                modifier = Modifier.fillMaxWidth(),
             )
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -261,96 +260,122 @@ private fun QuestUdpBridgeCard(
 }
 
 @Composable
-private fun DroneVideoFeedCard(
+private fun LiveVideoFeedCard(
     state: ControllerConnectionState,
     videoDecoder: H264VideoDecoder?,
+    onSetVideoPreviewEnabled: (Boolean) -> Unit,
 ) {
+    var isExpanded by rememberSaveable { mutableStateOf(false) }
     val metrics = state.videoDecoderMetrics
+
+    LaunchedEffect(isExpanded) {
+        onSetVideoPreviewEnabled(isExpanded)
+        if (!isExpanded) {
+            videoDecoder?.detachSurface()
+        }
+    }
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                text = "Live Video Feed (PoC)",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            HorizontalDivider()
-
-            Box(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black),
-                contentAlignment = Alignment.Center,
+                    .clickable { isExpanded = !isExpanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (videoDecoder != null) {
-                    AndroidView(
-                        modifier = Modifier.fillMaxSize(),
-                        factory = { context ->
-                            TextureView(context).apply {
-                                var activeSurface: Surface? = null
-                                surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                                    override fun onSurfaceTextureAvailable(
-                                        surfaceTexture: SurfaceTexture,
-                                        width: Int,
-                                        height: Int,
-                                    ) {
-                                        val surface = Surface(surfaceTexture)
-                                        activeSurface = surface
-                                        videoDecoder.attachSurface(surface)
-                                    }
-
-                                    override fun onSurfaceTextureSizeChanged(
-                                        surfaceTexture: SurfaceTexture,
-                                        width: Int,
-                                        height: Int,
-                                    ) = Unit
-
-                                    override fun onSurfaceTextureDestroyed(
-                                        surfaceTexture: SurfaceTexture,
-                                    ): Boolean {
-                                        videoDecoder.detachSurface()
-                                        activeSurface?.release()
-                                        activeSurface = null
-                                        return true
-                                    }
-
-                                    override fun onSurfaceTextureUpdated(
-                                        surfaceTexture: SurfaceTexture,
-                                    ) = Unit
-                                }
-                            }
-                        },
-                    )
-                }
-
-                if (metrics.framesDecoded == 0L) {
-                    Text(
-                        text = if (state.aoaVideoEnvelopesReceived > 0L) {
-                            "Awaiting H.264 SPS/Keyframe…"
-                        } else {
-                            "No video stream (power on aircraft)"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = Color.White.copy(alpha = 0.75f),
-                    )
-                }
+                Text(
+                    text = "Live Video Feed",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = if (isExpanded) "Hide ▲" else "Show ▼",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
             }
 
-            KeyValueRow(
-                label = "Decoder Output",
-                value = if (metrics.framesDecoded > 0L) {
-                    val fps = if (metrics.framesPerSecond > 0f) " · %.1f fps".format(metrics.framesPerSecond) else ""
-                    val mbps = if (metrics.bitrateKbps > 0L) " · %.2f Mbps".format(metrics.bitrateKbps / 1000.0) else ""
-                    "${metrics.videoWidth}×${metrics.videoHeight} (${metrics.framesDecoded} frames$fps$mbps)"
-                } else {
-                    "Idle (0 frames)"
-                },
-            )
+            if (isExpanded) {
+                HorizontalDivider()
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (videoDecoder != null) {
+                        AndroidView(
+                            modifier = Modifier.fillMaxSize(),
+                            factory = { context ->
+                                TextureView(context).apply {
+                                    var activeSurface: Surface? = null
+                                    surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                                        override fun onSurfaceTextureAvailable(
+                                            surfaceTexture: SurfaceTexture,
+                                            width: Int,
+                                            height: Int,
+                                        ) {
+                                            val surface = Surface(surfaceTexture)
+                                            activeSurface = surface
+                                            videoDecoder.attachSurface(surface)
+                                        }
+
+                                        override fun onSurfaceTextureSizeChanged(
+                                            surfaceTexture: SurfaceTexture,
+                                            width: Int,
+                                            height: Int,
+                                        ) = Unit
+
+                                        override fun onSurfaceTextureDestroyed(
+                                            surfaceTexture: SurfaceTexture,
+                                        ): Boolean {
+                                            videoDecoder.detachSurface()
+                                            activeSurface?.release()
+                                            activeSurface = null
+                                            return true
+                                        }
+
+                                        override fun onSurfaceTextureUpdated(
+                                            surfaceTexture: SurfaceTexture,
+                                        ) = Unit
+                                    }
+                                }
+                            },
+                        )
+                    }
+
+                    if (metrics.framesDecoded == 0L) {
+                        Text(
+                            text = if (state.aoaVideoEnvelopesReceived > 0L) {
+                                "Awaiting H.264 SPS/Keyframe…"
+                            } else {
+                                "No video stream (power on aircraft)"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color.White.copy(alpha = 0.75f),
+                        )
+                    }
+                }
+
+                KeyValueItem(
+                    label = "Decoder Output",
+                    value = if (metrics.framesDecoded > 0L) {
+                        val fps = if (metrics.framesPerSecond > 0f) " · %.1f fps".format(metrics.framesPerSecond) else ""
+                        val mbps = if (metrics.bitrateKbps > 0L) " · %.2f Mbps".format(metrics.bitrateKbps / 1000.0) else ""
+                        "${metrics.videoWidth}×${metrics.videoHeight} (${metrics.framesDecoded} frames$fps$mbps)"
+                    } else {
+                        "Idle (0 frames)"
+                    },
+                )
+            }
         }
     }
 }
@@ -358,8 +383,6 @@ private fun DroneVideoFeedCard(
 @Composable
 private fun ConnectionStatusCard(
     state: ControllerConnectionState,
-    onScanClicked: () -> Unit,
-    onQueryVersionClicked: () -> Unit,
 ) {
     val containerColor = when (state.connectionPhase) {
         ConnectionPhase.CONNECTED -> MaterialTheme.colorScheme.primaryContainer
@@ -398,27 +421,6 @@ private fun ConnectionStatusCard(
                 text = state.statusMessage,
                 style = MaterialTheme.typography.bodyMedium,
             )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(
-                    onClick = onScanClicked,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(text = "Scan USB")
-                }
-                OutlinedButton(
-                    onClick = onQueryVersionClicked,
-                    enabled = state.connectionPhase == ConnectionPhase.CONNECTED,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(text = "Ping DUML")
-                }
-            }
         }
     }
 }
@@ -428,7 +430,7 @@ private fun UsbDescriptorCard(descriptor: UsbAccessoryDescriptor?) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
                 text = "USB Accessory Descriptor (AOA 2.0)",
@@ -442,12 +444,10 @@ private fun UsbDescriptorCard(descriptor: UsbAccessoryDescriptor?) {
                     style = MaterialTheme.typography.bodyMedium,
                 )
             } else {
-                KeyValueRow(label = "Manufacturer", value = descriptor.manufacturer)
-                KeyValueRow(label = "Model", value = descriptor.model)
-                KeyValueRow(label = "Description", value = descriptor.description)
-                KeyValueRow(label = "Version", value = descriptor.version)
-                KeyValueRow(label = "URI", value = descriptor.uri)
-                KeyValueRow(label = "Serial", value = descriptor.serial)
+                KeyValueItem(label = "Manufacturer", value = descriptor.manufacturer)
+                KeyValueItem(label = "Model", value = descriptor.model)
+                KeyValueItem(label = "Description", value = descriptor.description)
+                KeyValueItem(label = "URI", value = descriptor.uri)
             }
         }
     }
@@ -458,7 +458,7 @@ private fun StreamMetricsCard(state: ControllerConnectionState) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
                 text = "Live AOA / DUML Stream",
@@ -466,21 +466,21 @@ private fun StreamMetricsCard(state: ControllerConnectionState) {
                 fontWeight = FontWeight.SemiBold,
             )
             HorizontalDivider()
-            KeyValueRow(label = "Bytes Received", value = "${state.totalBytesReceived} B")
-            KeyValueRow(label = "Bytes Sent", value = "${state.totalBytesSent} B")
-            KeyValueRow(
+            KeyValueItem(label = "Bytes Received", value = "${state.totalBytesReceived} B")
+            KeyValueItem(label = "Bytes Sent", value = "${state.totalBytesSent} B")
+            KeyValueItem(
                 label = "AOA DUML Envelopes (0x5749)",
                 value = state.aoaDumlEnvelopesReceived.toString(),
             )
-            KeyValueRow(
+            KeyValueItem(
                 label = "AOA Video Envelopes (0x574A)",
                 value = "${state.aoaVideoEnvelopesReceived} (${state.videoBytesReceived} B)",
             )
-            KeyValueRow(
+            KeyValueItem(
                 label = "Valid DUML v1 Packets",
                 value = state.dumlFramesReceived.toString(),
             )
-            KeyValueRow(
+            KeyValueItem(
                 label = "Active Bus Modules",
                 value = if (state.observedModules.isEmpty()) {
                     "None observed yet"
@@ -497,7 +497,7 @@ private fun StreamMetricsCard(state: ControllerConnectionState) {
                     fontWeight = FontWeight.SemiBold,
                 )
                 state.moduleVersions.forEach { (moduleName, versionText) ->
-                    KeyValueRow(label = moduleName, value = versionText)
+                    KeyValueItem(label = moduleName, value = versionText)
                 }
             }
         }
@@ -506,10 +506,13 @@ private fun StreamMetricsCard(state: ControllerConnectionState) {
 
 @Composable
 private fun TelemetryDetailsCard(state: ControllerConnectionState) {
+    var isPayloadHexExpanded by rememberSaveable { mutableStateOf(false) }
+    var isRawHexExpanded by rememberSaveable { mutableStateOf(false) }
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
                 text = "Controller & Aircraft Telemetry",
@@ -525,30 +528,17 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
-                KeyValueRow(
+                KeyValueItem(
                     label = "Left Stick (Yaw / Throttle)",
                     value = "${axes.leftStickHorizontal} / ${axes.leftStickVertical}",
                 )
-                KeyValueRow(
+                KeyValueItem(
                     label = "Right Stick (Roll / Pitch)",
                     value = "${axes.rightStickHorizontal} / ${axes.rightStickVertical}",
                 )
-                KeyValueRow(
+                KeyValueItem(
                     label = "Gimbal Wheel",
                     value = axes.gimbalWheel.toString(),
-                )
-                KeyValueRow(
-                    label = "Flight Mode Switch",
-                    value = axes.flightModeSwitch,
-                )
-                val buttonsList = mutableListOf<String>()
-                if (axes.rthButtonPressed) buttonsList.add("RTH")
-                if (axes.pauseButtonPressed) buttonsList.add("PAUSE")
-                if (axes.c1ButtonPressed) buttonsList.add("C1")
-                if (axes.c2ButtonPressed) buttonsList.add("C2")
-                KeyValueRow(
-                    label = "Hardware Buttons",
-                    value = if (buttonsList.isNotEmpty()) buttonsList.joinToString(", ") else "None",
                 )
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             }
@@ -563,7 +553,7 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
-                KeyValueRow(
+                KeyValueItem(
                     label = "Battery",
                     value = if (batteryPercentage != null) "$batteryPercentage%" else "—",
                 )
@@ -577,7 +567,7 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                         }
                     }
                     if (voltageText != null) {
-                        KeyValueRow(label = "Battery Voltage", value = voltageText)
+                        KeyValueItem(label = "Battery Voltage", value = voltageText)
                     }
                     val capacityText = if (battery.remainingCapacityMilliampHours != null && battery.fullCapacityMilliampHours != null) {
                         "%,d / %,d mAh".format(battery.remainingCapacityMilliampHours, battery.fullCapacityMilliampHours)
@@ -587,42 +577,42 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                         null
                     }
                     if (capacityText != null) {
-                        KeyValueRow(label = "Battery Capacity", value = capacityText)
+                        KeyValueItem(label = "Battery Capacity", value = capacityText)
                     }
                     if (battery.powerWatts != null) {
-                        KeyValueRow(label = "Power Draw", value = "%.1f W".format(battery.powerWatts))
+                        KeyValueItem(label = "Power Draw", value = "%.1f W".format(battery.powerWatts))
                     }
                     if (battery.estimatedFlightTimeMinutes != null) {
-                        KeyValueRow(
+                        KeyValueItem(
                             label = "Estimated Flight Time",
                             value = FlightDynamicsCalculator.formatEstimatedFlightTime(battery.estimatedFlightTimeMinutes),
                         )
                     }
                     if (battery.temperatureCelsius != null) {
-                        KeyValueRow(label = "Battery Temp", value = "%.1f °C".format(battery.temperatureCelsius))
+                        KeyValueItem(label = "Battery Temp", value = "%.1f °C".format(battery.temperatureCelsius))
                     }
                     if (battery.lifetimeHealthPercentage != null) {
-                        KeyValueRow(label = "Battery Health (SOH)", value = "${battery.lifetimeHealthPercentage}%")
+                        KeyValueItem(label = "Battery Health (SOH)", value = "${battery.lifetimeHealthPercentage}%")
                     }
                     if (battery.cycleCount != null) {
-                        KeyValueRow(label = "Discharge Cycles", value = "${battery.cycleCount}")
+                        KeyValueItem(label = "Discharge Cycles", value = "${battery.cycleCount}")
                     }
                     if (battery.cellVoltagesMillivolts.isNotEmpty()) {
-                        KeyValueRow(
+                        KeyValueItem(
                             label = "Cell Voltages",
                             value = battery.cellVoltagesMillivolts.joinToString(" / ") { "${it}mV" },
                         )
                         if (battery.cellDeltaMillivolts != null) {
-                            KeyValueRow(label = "Cell Delta (Δ)", value = "${battery.cellDeltaMillivolts} mV")
+                            KeyValueItem(label = "Cell Delta (Δ)", value = "${battery.cellDeltaMillivolts} mV")
                         }
                     }
                 }
                 if (gimbal != null) {
-                    KeyValueRow(
+                    KeyValueItem(
                         label = "Gimbal Pitch",
                         value = "%.1f°".format(gimbal.pitchDegrees),
                     )
-                    KeyValueRow(
+                    KeyValueItem(
                         label = "Gimbal Attitude (P / R / Y)",
                         value = "%.1f° / %.1f° / %.1f°".format(
                             gimbal.pitchDegrees,
@@ -632,25 +622,25 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                     )
                 }
                 if (telemetry != null) {
-                    KeyValueRow(label = "Flight Mode", value = telemetry.flightMode)
+                    KeyValueItem(label = "Flight Mode", value = telemetry.flightMode)
                     val statusFlags = mutableListOf<String>()
                     if (telemetry.isRthActive) statusFlags.add("RTH")
                     if (telemetry.isAutoLanding) statusFlags.add("Auto-Landing")
                     if (telemetry.isCompassError) statusFlags.add("Compass Error")
                     if (telemetry.isSportMode) statusFlags.add("Sport Mode")
                     if (statusFlags.isNotEmpty()) {
-                        KeyValueRow(label = "Autopilot Status", value = statusFlags.joinToString(", "))
+                        KeyValueItem(label = "Autopilot Status", value = statusFlags.joinToString(", "))
                     }
-                    KeyValueRow(label = "GPS Satellites", value = telemetry.gpsSatellites.toString())
-                    KeyValueRow(
+                    KeyValueItem(label = "GPS Satellites", value = telemetry.gpsSatellites.toString())
+                    KeyValueItem(
                         label = "Coordinates",
                         value = "%.6f, %.6f".format(telemetry.latitudeDegrees, telemetry.longitudeDegrees),
                     )
                     val altSource = if (telemetry.isUltrasonicValid && telemetry.ultrasonicHeightMeters != null) "VPS" else "Barometer"
                     val effectiveAlt = if (telemetry.isUltrasonicValid && telemetry.ultrasonicHeightMeters != null) telemetry.ultrasonicHeightMeters!! else telemetry.relativeAltitudeMeters
-                    KeyValueRow(label = "Altitude ($altSource)", value = "%.1f m".format(effectiveAlt))
+                    KeyValueItem(label = "Altitude ($altSource)", value = "%.1f m".format(effectiveAlt))
                     if (telemetry.ultrasonicHeightMeters != null) {
-                        KeyValueRow(label = "Ultrasonic Clearance", value = "%.2f m".format(telemetry.ultrasonicHeightMeters))
+                        KeyValueItem(label = "Ultrasonic Clearance", value = "%.2f m".format(telemetry.ultrasonicHeightMeters))
                     }
                     val groundSpeed = FlightDynamicsCalculator.calculateGroundSpeedMetersPerSecond(
                         telemetry.velocityXMetersPerSecond,
@@ -659,12 +649,12 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                     val climbRate = FlightDynamicsCalculator.calculateClimbRateMetersPerSecond(telemetry.velocityZMetersPerSecond)
                     val horizontalSpeedText = FlightDynamicsCalculator.formatGroundSpeed(groundSpeed, isImperial = false)
                     val verticalSpeedText = FlightDynamicsCalculator.formatVerticalSpeed(climbRate, isImperial = false)
-                    KeyValueRow(
+                    KeyValueItem(
                         label = "Speed (H / V)",
                         value = "$horizontalSpeedText · $verticalSpeedText",
                     )
                     val heading = FlightDynamicsCalculator.formatCompassHeading(telemetry.yawDegrees)
-                    KeyValueRow(
+                    KeyValueItem(
                         label = "Attitude (P / R / HDG)",
                         value = "%.1f° / %.1f° / %s".format(
                             telemetry.pitchDegrees,
@@ -672,7 +662,7 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                             heading,
                         ),
                     )
-                    KeyValueRow(
+                    KeyValueItem(
                         label = "Motors / In Air",
                         value = "Motors=${telemetry.motorsRunning}, InAir=${telemetry.aircraftInAir}",
                     )
@@ -686,83 +676,107 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                 fontWeight = FontWeight.SemiBold,
             )
             val lastPacket = state.lastDumlPacket
-            KeyValueRow(
+            KeyValueItem(
                 label = "Source",
                 value = lastPacket?.sourceModule ?: "—",
             )
-            KeyValueRow(
+            KeyValueItem(
                 label = "Destination",
                 value = lastPacket?.destinationModule ?: "—",
             )
-            KeyValueRow(
+            KeyValueItem(
                 label = "Command",
                 value = lastPacket?.commandSetAndId ?: "—",
             )
-            KeyValueRow(
+            KeyValueItem(
                 label = "Seq / Length",
                 value = lastPacket?.sequenceAndLength ?: "—",
             )
-            Text(
-                text = "Payload (Hex)",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = lastPacket?.payloadHex ?: "Waiting for DUML frames…",
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                minLines = 2,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(),
-            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isPayloadHexExpanded = !isPayloadHexExpanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Payload (Hex)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = if (isPayloadHexExpanded) "Hide ▲" else "Show ▼",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            if (isPayloadHexExpanded) {
+                Text(
+                    text = lastPacket?.payloadHex ?: "Waiting for DUML frames…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            Text(
-                text = "Last Raw USB Read (Hex)",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = state.lastRawHexPreview ?: "No bytes read yet.",
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                minLines = 2,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isRawHexExpanded = !isRawHexExpanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Last Raw USB Read (Hex)",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = if (isRawHexExpanded) "Hide ▲" else "Show ▼",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            if (isRawHexExpanded) {
+                Text(
+                    text = state.lastRawHexPreview ?: "No bytes read yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun KeyValueRow(
+private fun KeyValueItem(
     label: String,
     value: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top,
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(1.dp),
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(0.45f),
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(0.55f),
+            color = valueColor,
         )
     }
 }
@@ -799,8 +813,7 @@ fun ControllerDiagnosticsScreenPreview() {
                 ),
                 lastRawHexPreview = "55 CC 49 57 17 00 00 00 55 17 04 92",
             ),
-            onScanClicked = {},
-            onQueryVersionClicked = {},
+            onSetVideoPreviewEnabled = {},
             onDisconnectSubscribersClicked = {},
             onResumeSubscribersClicked = {},
         )

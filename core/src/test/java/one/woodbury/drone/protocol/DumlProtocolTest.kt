@@ -141,16 +141,14 @@ class DumlProtocolTest {
     }
 
     @Test
-    fun decodeRemoteControllerAxes_extractsSticksSwitchesAndButtons() {
-        val payload = ByteArray(12)
+    fun decodeRemoteControllerAxes_extractsSticksAndGimbalWheel() {
+        val payload = ByteArray(10)
         val buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
         buffer.putShort(0, 1024) // Right stick H
         buffer.putShort(2, 1100) // Right stick V
         buffer.putShort(4, 1024) // Left stick V
         buffer.putShort(6, 950)  // Left stick H
         buffer.putShort(8, 1024) // Gimbal wheel
-        payload[10] = 2          // Sport mode switch
-        payload[11] = 0x14       // RTH (0x10) + C1 (0x04)
 
         val frame = DumlFrame(
             sourceModuleId = DumlProtocol.MODULE_REMOTE_CONTROLLER,
@@ -169,11 +167,6 @@ class DumlProtocolTest {
         assertEquals(1024, decoded.leftStickVertical)
         assertEquals(950, decoded.leftStickHorizontal)
         assertEquals(1024, decoded.gimbalWheel)
-        assertEquals("SPORT", decoded.flightModeSwitch)
-        assertTrue(decoded.rthButtonPressed)
-        assertFalse(decoded.pauseButtonPressed)
-        assertTrue(decoded.c1ButtonPressed)
-        assertFalse(decoded.c2ButtonPressed)
     }
 
     @Test

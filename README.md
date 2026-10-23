@@ -210,6 +210,19 @@ or international feet:
   ($121.92\text{ m}$), the altitude number turns red (`#F85149`) to alert the
   pilot to standard ceiling limits.
 
+### USB Accessory Descriptor Placeholders
+
+When connecting over Android Open Accessory (AOA 2.0), Android requires the USB
+host accessory to supply identifying descriptor strings (manufacturer, model,
+description, version, URI, and serial number).
+
+DJI remote controllers hardcode dummy placeholder constants for the version
+(`v1.2.3.4`) and serial number (`12345678`) fields during the initial USB
+control transfer handshake. Because these values are static placeholders rather
+than authentic hardware or firmware identifiers, they are omitted from the
+`:bridge` diagnostic user interface. Genuine module firmware versions are
+instead parsed dynamically from inbound DUML version push packets and queries.
+
 ---
 
 ## Building and Testing

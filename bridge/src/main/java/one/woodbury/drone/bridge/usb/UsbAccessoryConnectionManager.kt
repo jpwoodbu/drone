@@ -121,6 +121,13 @@ class UsbAccessoryConnectionManager(
         }
     }
 
+    /**
+     * Controls whether incoming H.264 video chunks are dispatched to the local hardware decoder.
+     * When false (e.g. video preview card is collapsed), local decoding is skipped to save CPU/GPU cycles.
+     */
+    @Volatile
+    var isVideoPreviewEnabled: Boolean = false
+
     private val udpBridgeSender: UdpBridgeSender = UdpBridgeSender(applicationContext) { bridgeMetrics ->
         _connectionState.update { currentState ->
             currentState.copy(udpBridgeMetrics = bridgeMetrics)
@@ -256,6 +263,7 @@ class UsbAccessoryConnectionManager(
      * Releases all resources when the owning activity is destroyed.
      */
     fun shutdown() {
+        isVideoPreviewEnabled = false
         BridgeForegroundService.stop(applicationContext)
         udpBridgeSender.shutdown()
         videoDecoder.shutdown()
@@ -434,7 +442,9 @@ class UsbAccessoryConnectionManager(
 
     private fun handleVideoChunk(videoChunk: ByteArray) {
         udpBridgeSender.enqueueVideoChunk(videoChunk)
-        videoDecoder.feedRawVideoChunk(videoChunk)
+        if (isVideoPreviewEnabled) {
+            videoDecoder.feedRawVideoChunk(videoChunk)
+        }
         _connectionState.update { currentState ->
             currentState.copy(
                 videoBytesReceived = currentState.videoBytesReceived + videoChunk.size,

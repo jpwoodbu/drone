@@ -687,17 +687,6 @@ object DumlProtocol {
         if (rightStickHorizontal !in 200..1900 || rightStickVertical !in 200..1900) {
             return null
         }
-        val modeSwitch = if (payload.size >= 11) {
-            val rawMode = payload[10].toInt() and 0xFF
-            if (rawMode == 2) "SPORT" else "POSITION"
-        } else {
-            "POSITION"
-        }
-        val buttonByte = if (payload.size >= 12) payload[11].toInt() and 0xFF else 0
-        val rthButton = (buttonByte and 0x10) != 0
-        val pauseButton = (buttonByte and 0x20) != 0
-        val c1Button = (buttonByte and 0x04) != 0
-        val c2Button = (buttonByte and 0x08) != 0
 
         return RemoteControllerAxes(
             rightStickHorizontal = rightStickHorizontal,
@@ -705,11 +694,6 @@ object DumlProtocol {
             leftStickVertical = leftStickVertical,
             leftStickHorizontal = leftStickHorizontal,
             gimbalWheel = gimbalWheel,
-            flightModeSwitch = modeSwitch,
-            rthButtonPressed = rthButton,
-            pauseButtonPressed = pauseButton,
-            c1ButtonPressed = c1Button,
-            c2ButtonPressed = c2Button,
         )
     }
 
@@ -865,7 +849,7 @@ data class FlightControllerTelemetry(
 )
 
 /**
- * Remote Controller physical stick, switch, and button positions (`0x06/0x05`).
+ * Remote Controller physical stick and gimbal wheel positions (`0x06/0x05`).
  */
 data class RemoteControllerAxes(
     val rightStickHorizontal: Int,
@@ -873,11 +857,6 @@ data class RemoteControllerAxes(
     val leftStickVertical: Int,
     val leftStickHorizontal: Int,
     val gimbalWheel: Int,
-    val flightModeSwitch: String = "POSITION",
-    val rthButtonPressed: Boolean = false,
-    val pauseButtonPressed: Boolean = false,
-    val c1ButtonPressed: Boolean = false,
-    val c2ButtonPressed: Boolean = false,
 )
 
 /**
