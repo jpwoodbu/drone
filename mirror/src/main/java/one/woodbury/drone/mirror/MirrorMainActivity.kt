@@ -26,6 +26,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -46,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -53,6 +55,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import one.woodbury.drone.flight.FlightDynamicsCalculator
 import one.woodbury.drone.video.H264VideoDecoder
 
 /**
@@ -106,6 +109,9 @@ fun MirrorCockpitScreen(
     modifier: Modifier = Modifier,
 ) {
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showBatteryDialog by remember { mutableStateOf(false) }
+    var showNetworkDialog by remember { mutableStateOf(false) }
+    var showFlightModesDialog by remember { mutableStateOf(false) }
 
     if (showSettingsDialog) {
         MirrorSettingsDialog(
@@ -122,6 +128,31 @@ fun MirrorCockpitScreen(
         )
     }
 
+    if (showBatteryDialog) {
+        BatteryHealthDialog(
+            batteryTelemetry = state.batteryTelemetry,
+            onDismiss = { showBatteryDialog = false },
+        )
+    }
+
+    if (showNetworkDialog) {
+        NetworkDiagnosticsDialog(
+            state = state,
+            onOpenSettings = {
+                showNetworkDialog = false
+                showSettingsDialog = true
+            },
+            onDismiss = { showNetworkDialog = false },
+        )
+    }
+
+    if (showFlightModesDialog) {
+        FlightModesDialog(
+            currentFlightMode = state.flightControllerTelemetry?.flightMode,
+            onDismiss = { showFlightModesDialog = false },
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -131,7 +162,8 @@ fun MirrorCockpitScreen(
     ) {
         TopTelemetryHudBar(
             state = state,
-            onOpenSettings = { showSettingsDialog = true },
+            onOpenNetworkDiagnostics = { showNetworkDialog = true },
+            onOpenBatteryHealth = { showBatteryDialog = true },
             onToggleAltitudeUnit = {
                 val nextUnit = if (state.altitudeUnit == AltitudeUnit.METERS) {
                     AltitudeUnit.FEET
@@ -249,7 +281,11 @@ fun MirrorCockpitScreen(
             }
         }
 
-        BottomDiagnosticsBar(state = state)
+        BottomDiagnosticsBar(
+            state = state,
+            onOpenSettings = { showSettingsDialog = true },
+            onOpenFlightModes = { showFlightModesDialog = true },
+        )
     }
 }
 
@@ -391,18 +427,80 @@ private fun MirrorSettingsDialog(
 @Composable
 private fun TopTelemetryHudBar(
     state: MirrorReceiverState,
-    onOpenSettings: () -> Unit,
+    onOpenNetworkDiagnostics: () -> Unit,
+    onOpenBatteryHealth: () -> Unit,
     onToggleAltitudeUnit: () -> Unit,
 ) {
     val telemetry = state.flightControllerTelemetry
-    val axes = state.remoteControllerAxes
-    val altitudeMeters = telemetry?.relativeAltitudeMeters
-    val altitudeText = if (altitudeMeters != null) {
-        AltitudeFormatter.formatAltitude(altitudeMeters, state.altitudeUnit)
+    val isImperial = state.altitudeUnit == AltitudeUnit.FEET
+
+    val hasValidVps = telemetry?.isUltrasonicValid == true && telemetry.ultrasonicHeightMeters != null
+    val effectiveAltitude = if (hasValidVps) telemetry!!.ultrasonicHeightMeters!! else telemetry?.relativeAltitudeMeters
+    val effectiveSource = if (hasValidVps) AltitudeSource.VPS else AltitudeSource.BAROMETER
+    val altitudeText = if (effectiveAltitude != null) {
+        AltitudeFormatter.formatAltitudeWithSource(effectiveAltitude, effectiveSource, state.altitudeUnit)
     } else {
         "—"
     }
-    val isAltitudeWarning = altitudeMeters != null && AltitudeFormatter.isHighAltitudeWarning(altitudeMeters)
+    val isAltitudeWarning = effectiveAltitude != null && AltitudeFormatter.isHighAltitudeWarning(effectiveAltitude)
+
+    val activeAlert = when {
+        telemetry?.isRthActive == true -> "RTH" to Color(0xFFD29922)
+        telemetry?.isAutoLanding == true -> "LANDING" to Color(0xFFD29922)
+        telemetry?.isCompassError == true -> "COMPASS" to Color(0xFFF85149)
+        telemetry?.isSportMode == true -> "SPORT" to Color(0xFF58A6FF)
+        else -> null
+    }
+
+    val batteryPercentage = state.batteryTelemetry?.percentage
+        ?: telemetry?.batteryPercentage?.takeIf { it > 0 }
+    val powerWatts = state.batteryTelemetry?.powerWatts
+    val batteryValue = when {
+        batteryPercentage != null && powerWatts != null -> {
+            "$batteryPercentage% · ${FlightDynamicsCalculator.formatPowerWatts(powerWatts)}"
+        }
+        batteryPercentage != null -> "$batteryPercentage%"
+        else -> "—"
+    }
+
+    val estFlightTime = state.batteryTelemetry?.estimatedFlightTimeMinutes
+
+    val vx = telemetry?.velocityXMetersPerSecond ?: 0f
+    val vy = telemetry?.velocityYMetersPerSecond ?: 0f
+    val vz = telemetry?.velocityZMetersPerSecond ?: 0f
+    val groundSpeed = FlightDynamicsCalculator.calculateGroundSpeedMetersPerSecond(vx, vy)
+    val climbRate = FlightDynamicsCalculator.calculateClimbRateMetersPerSecond(vz)
+    val speedText = if (telemetry != null) {
+        val horizontalText = FlightDynamicsCalculator.formatGroundSpeed(groundSpeed, isImperial)
+        val verticalText = FlightDynamicsCalculator.formatVerticalSpeed(climbRate, isImperial)
+        "$horizontalText · $verticalText"
+    } else {
+        "—"
+    }
+
+    val homeLat = state.homeLatitudeDegrees
+    val homeLon = state.homeLongitudeDegrees
+    val curLat = telemetry?.latitudeDegrees
+    val curLon = telemetry?.longitudeDegrees
+    val distanceText = if (homeLat != null && homeLon != null && curLat != null && curLon != null && curLat != 0.0 && curLon != 0.0) {
+        val distanceMeters = FlightDynamicsCalculator.calculateHaversineDistanceMeters(homeLat, homeLon, curLat, curLon)
+        FlightDynamicsCalculator.formatDistance(distanceMeters, isImperial)
+    } else {
+        "—"
+    }
+
+    val totalPackets = state.udpPacketsReceived + state.udpSequenceDrops
+    val dropRate = if (totalPackets > 0L) {
+        (state.udpSequenceDrops.toDouble() / totalPackets.toDouble()) * 100.0
+    } else {
+        0.0
+    }
+    val wifiIconColor = when {
+        state.phoneBridgeIp == null -> Color.White.copy(alpha = 0.4f)
+        state.udpSequenceDrops == 0L || dropRate < 0.5 -> Color(0xFF3FB950)
+        dropRate < 2.0 -> Color(0xFFD29922)
+        else -> Color(0xFFF85149)
+    }
 
     ComposeSurface(
         modifier = Modifier.fillMaxWidth(),
@@ -420,32 +518,43 @@ private fun TopTelemetryHudBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                HudMetricItem(
-                    label = "BRIDGE",
-                    value = state.phoneBridgeIp
-                        ?: if (state.configuredPhoneIp.isNotEmpty()) {
-                            "MANUAL ${state.configuredPhoneIp}:5600"
-                        } else {
-                            "SEARCHING :5600"
-                        },
-                    highlight = state.phoneBridgeIp != null,
-                )
                 IconButton(
-                    onClick = onOpenSettings,
+                    onClick = onOpenNetworkDiagnostics,
                     modifier = Modifier.size(28.dp),
                 ) {
-                    Text(
-                        text = "⚙",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color.White.copy(alpha = 0.85f),
+                    Icon(
+                        painter = painterResource(R.drawable.ic_wifi),
+                        contentDescription = "Bridge Network Diagnostics",
+                        tint = wifiIconColor,
+                        modifier = Modifier.size(20.dp),
                     )
                 }
+                if (activeAlert != null) {
+                    ComposeSurface(
+                        color = activeAlert.second.copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.padding(start = 2.dp),
+                    ) {
+                        Text(
+                            text = activeAlert.first,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = activeAlert.second,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                }
             }
-            val batteryPercentage = state.batteryTelemetry?.percentage
-                ?: telemetry?.batteryPercentage?.takeIf { it > 0 }
+
             HudMetricItem(
                 label = "BATTERY",
-                value = if (batteryPercentage != null) "$batteryPercentage%" else "—",
+                value = batteryValue,
+                onClick = onOpenBatteryHealth,
+            )
+            HudMetricItem(
+                label = "EST TIME",
+                value = FlightDynamicsCalculator.formatEstimatedFlightTime(estFlightTime),
             )
             HudMetricItem(
                 label = "ALTITUDE",
@@ -454,16 +563,25 @@ private fun TopTelemetryHudBar(
                 onClick = onToggleAltitudeUnit,
             )
             HudMetricItem(
+                label = "SPEED (H/V)",
+                value = speedText,
+            )
+            HudMetricItem(
+                label = "DISTANCE",
+                value = distanceText,
+            )
+            HudMetricItem(
                 label = "GPS SATS",
                 value = telemetry?.gpsSatellites?.toString() ?: "—",
             )
             HudMetricItem(
-                label = "ATTITUDE (P/R/Y)",
+                label = "ATTITUDE (P/R/HDG)",
                 value = if (telemetry != null) {
-                    "%.0f° / %.0f° / %.0f°".format(
+                    val heading = FlightDynamicsCalculator.formatCompassHeading(telemetry.yawDegrees)
+                    "%.0f° / %.0f° / %s".format(
                         telemetry.pitchDegrees,
                         telemetry.rollDegrees,
-                        telemetry.yawDegrees,
+                        heading,
                     )
                 } else {
                     "—"
@@ -474,21 +592,21 @@ private fun TopTelemetryHudBar(
                 label = "GIMBAL",
                 value = if (gimbal != null) "%.0f°".format(gimbal.pitchDegrees) else "—",
             )
-            HudMetricItem(
-                label = "RC STICKS (L/R)",
-                value = if (axes != null) {
-                    "${axes.leftStickHorizontal},${axes.leftStickVertical} | ${axes.rightStickHorizontal},${axes.rightStickVertical}"
-                } else {
-                    "—"
-                },
-            )
         }
     }
 }
 
 @Composable
-private fun BottomDiagnosticsBar(state: MirrorReceiverState) {
+private fun BottomDiagnosticsBar(
+    state: MirrorReceiverState,
+    onOpenSettings: () -> Unit,
+    onOpenFlightModes: () -> Unit,
+) {
     val metrics = state.videoDecoderMetrics
+    val fpsText = if (metrics.framesPerSecond > 0f) "%.1f fps".format(metrics.framesPerSecond) else "— fps"
+    val mbpsText = if (metrics.bitrateKbps > 0L) "%.2f Mbps".format(metrics.bitrateKbps / 1000.0) else "— Mbps"
+    val flightMode = state.flightControllerTelemetry?.flightMode ?: "—"
+
     ComposeSurface(
         modifier = Modifier.fillMaxWidth(),
         color = Color(0xFF161B22),
@@ -497,26 +615,49 @@ private fun BottomDiagnosticsBar(state: MirrorReceiverState) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 6.dp),
+                .padding(horizontal = 10.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = "VIDEO: ${metrics.videoWidth}×${metrics.videoHeight} (${metrics.framesDecoded} frames, ${metrics.keyframesReceived} IDR)",
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                color = Color.White.copy(alpha = 0.85f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = "UDP TX: ${state.heartbeatsSent} | RX: ${state.udpPacketsReceived} pkts (${state.udpBytesReceived / 1024} KB) | DUML: ${state.dumlFramesReceived} | Drops: ${state.udpSequenceDrops}",
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                color = Color.White.copy(alpha = 0.75f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Text(
+                        text = "⚙",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White.copy(alpha = 0.85f),
+                    )
+                }
+                Text(
+                    text = "VIDEO: ${metrics.videoWidth}×${metrics.videoHeight} (${metrics.framesDecoded} frames, ${metrics.keyframesReceived} IDR) · $mbpsText · $fpsText",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = Color.White.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            ComposeSurface(
+                color = Color(0xFF21262D),
+                shape = RoundedCornerShape(4.dp),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .clickable(onClick = onOpenFlightModes),
+            ) {
+                Text(
+                    text = "MODE: $flightMode",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF58A6FF),
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
         }
     }
 }

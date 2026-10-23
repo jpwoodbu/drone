@@ -346,6 +346,8 @@ data class VideoDecoderMetrics(
     val keyframesReceived: Long = 0L,
     val videoWidth: Int = 1280,
     val videoHeight: Int = 720,
+    val framesPerSecond: Float = 0f,
+    val bitrateKbps: Long = 0L,
 )
 
 /**
@@ -360,6 +362,17 @@ class H264VideoDecoder(
 
     private val framesDecodedCounter = AtomicLong(0L)
     private val keyframesReceivedCounter = AtomicLong(0L)
+    private val bytesReceivedCounter = AtomicLong(0L)
+
+    private val lastRateCalculationNanos = AtomicLong(System.nanoTime())
+    private val lastFramesDecodedForRate = AtomicLong(0L)
+    private val lastBytesReceivedForRate = AtomicLong(0L)
+
+    @Volatile
+    private var rollingFps: Float = 0f
+
+    @Volatile
+    private var rollingBitrateKbps: Long = 0L
 
     @Volatile
     private var negotiatedWidth: Int = 1280
@@ -455,6 +468,7 @@ class H264VideoDecoder(
      */
     fun feedRawVideoChunk(chunk: ByteArray) {
         if (chunk.isEmpty()) return
+        bytesReceivedCounter.addAndGet(chunk.size.toLong())
         if (!chunkQueue.offer(chunk)) {
             chunkQueue.poll()
             chunkQueue.offer(chunk)
@@ -581,6 +595,18 @@ class H264VideoDecoder(
     }
 
     private fun publishMetrics() {
+        val nowNanos = System.nanoTime()
+        val elapsedSeconds = (nowNanos - lastRateCalculationNanos.get()) / 1_000_000_000.0
+        if (elapsedSeconds >= 1.0) {
+            val currentFrames = framesDecodedCounter.get()
+            val currentBytes = bytesReceivedCounter.get()
+            val deltaFrames = currentFrames - lastFramesDecodedForRate.getAndSet(currentFrames)
+            val deltaBytes = currentBytes - lastBytesReceivedForRate.getAndSet(currentBytes)
+            lastRateCalculationNanos.set(nowNanos)
+            rollingFps = (deltaFrames / elapsedSeconds).toFloat()
+            rollingBitrateKbps = ((deltaBytes * 8L) / (elapsedSeconds * 1000.0)).toLong()
+        }
+
         onMetricsChanged(
             VideoDecoderMetrics(
                 isSurfaceAttached = isDecoderRunning.get(),
@@ -588,6 +614,8 @@ class H264VideoDecoder(
                 keyframesReceived = keyframesReceivedCounter.get(),
                 videoWidth = negotiatedWidth,
                 videoHeight = negotiatedHeight,
+                framesPerSecond = rollingFps,
+                bitrateKbps = rollingBitrateKbps,
             ),
         )
     }

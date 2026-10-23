@@ -38,4 +38,12 @@ class AltitudeFormatterTest {
     fun isHighAltitudeWarning_returnsFalseForNegativeAltitudes() {
         assertFalse(AltitudeFormatter.isHighAltitudeWarning(-5.0f))
     }
+
+    @Test
+    fun formatAltitudeWithSource_includesSourceTags() {
+        assertEquals("1.4 m [VPS]", AltitudeFormatter.formatAltitudeWithSource(1.4f, AltitudeSource.VPS, AltitudeUnit.METERS))
+        assertEquals("5 ft [VPS]", AltitudeFormatter.formatAltitudeWithSource(1.4f, AltitudeSource.VPS, AltitudeUnit.FEET))
+        assertEquals("12.5 m [BARO]", AltitudeFormatter.formatAltitudeWithSource(12.5f, AltitudeSource.BAROMETER, AltitudeUnit.METERS))
+        assertEquals("41 ft [BARO]", AltitudeFormatter.formatAltitudeWithSource(12.5f, AltitudeSource.BAROMETER, AltitudeUnit.FEET))
+    }
 }

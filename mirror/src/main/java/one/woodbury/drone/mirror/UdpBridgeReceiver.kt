@@ -51,6 +51,8 @@ data class MirrorReceiverState(
     val gimbalTelemetry: GimbalTelemetry? = null,
     val altitudeUnit: AltitudeUnit = AltitudeUnit.METERS,
     val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
+    val homeLatitudeDegrees: Double? = null,
+    val homeLongitudeDegrees: Double? = null,
 )
 
 /**
@@ -452,6 +454,25 @@ class UdpBridgeReceiver(
                 }
                 else -> currentState.flightControllerTelemetry
             }
+            val updatedHomeLat = currentState.homeLatitudeDegrees ?: if (
+                decodedOsd != null &&
+                decodedOsd.latitudeDegrees != 0.0 &&
+                (decodedOsd.motorsRunning || decodedOsd.aircraftInAir || decodedOsd.gpsSatellites >= 6)
+            ) {
+                decodedOsd.latitudeDegrees
+            } else {
+                null
+            }
+            val updatedHomeLon = currentState.homeLongitudeDegrees ?: if (
+                decodedOsd != null &&
+                decodedOsd.longitudeDegrees != 0.0 &&
+                (decodedOsd.motorsRunning || decodedOsd.aircraftInAir || decodedOsd.gpsSatellites >= 6)
+            ) {
+                decodedOsd.longitudeDegrees
+            } else {
+                null
+            }
+
             currentState.copy(
                 phoneBridgeIp = senderHost ?: currentState.phoneBridgeIp,
                 heartbeatsSent = heartbeatsSentCounter.get(),
@@ -464,6 +485,8 @@ class UdpBridgeReceiver(
                 flightControllerTelemetry = updatedTelemetry,
                 batteryTelemetry = updatedBattery,
                 gimbalTelemetry = decodedGimbal ?: currentState.gimbalTelemetry,
+                homeLatitudeDegrees = updatedHomeLat,
+                homeLongitudeDegrees = updatedHomeLon,
                 lastSocketError = lastErrorText,
             )
         }

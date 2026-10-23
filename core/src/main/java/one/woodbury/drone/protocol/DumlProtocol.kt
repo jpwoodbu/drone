@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.PI
+import one.woodbury.drone.flight.FlightDynamicsCalculator
 
 /**
  * Implements DJI's Android Open Accessory (AOA) multiplex framing (`0x55 0xCC`)
@@ -374,11 +375,53 @@ object DumlProtocol {
         val pitchDegrees = byteBuffer.getShort(24) * 0.1f
         val rollDegrees = byteBuffer.getShort(26) * 0.1f
         val yawDegrees = byteBuffer.getShort(28) * 0.1f
+        val modeByte = payload[30].toInt() and 0xFF
         val controllerStateFlags = byteBuffer.getInt(32)
         val gpsSatellites = payload[36].toInt() and 0xFF
         val batteryPercentage = payload[40].toInt() and 0xFF
         val motorsOn = (controllerStateFlags and 0x08) != 0
         val inAir = (controllerStateFlags and 0x04) != 0
+        val rthActive = (controllerStateFlags and 0x20) != 0 || modeByte == 14
+        val autoLanding = (controllerStateFlags and 0x80) != 0 || modeByte == 11
+        val lowBatteryWarning = false
+        val compassError = (controllerStateFlags and 0x400) != 0
+        val sportMode = (controllerStateFlags and 0x800) != 0 || modeByte == 24
+
+        val rawUltrasonic = if (payload.size >= 40) {
+            byteBuffer.getShort(38).toInt() and 0xFFFF
+        } else {
+            0
+        }
+        val isUltrasonicValid = rawUltrasonic in 1..800
+        val ultrasonicHeightMeters = if (isUltrasonicValid) {
+            if (rawUltrasonic > 50) rawUltrasonic * 0.01f else rawUltrasonic * 0.1f
+        } else {
+            null
+        }
+
+        val flightMode = when (modeByte) {
+            1 -> "ATTI"
+            2 -> "ATTI-CL"
+            3 -> "ATTI-HOVER"
+            4 -> "P-GO"
+            5 -> "P-GPS"
+            6 -> "GPS-CL"
+            7 -> "GPS-HOME"
+            8 -> "GPS-HOTPOINT"
+            9 -> "ASSIST-TAKEOFF"
+            10 -> "AUTO-TAKEOFF"
+            11 -> "AUTO-LAND"
+            12 -> "ATTI-LAND"
+            13 -> "NAVI-GO"
+            14 -> "RTH"
+            15 -> "CLICK-GO"
+            16 -> "JOYSTICK"
+            17 -> "CINEMA"
+            18 -> "ATTI-LIMITED"
+            24 -> "SPORT"
+            25 -> "FOLLOW-ME"
+            else -> if (sportMode) "SPORT" else if (rthActive) "RTH" else if (autoLanding) "AUTO-LAND" else "P-GPS"
+        }
 
         return FlightControllerTelemetry(
             latitudeDegrees = latitudeDegrees,
@@ -394,6 +437,14 @@ object DumlProtocol {
             batteryPercentage = batteryPercentage,
             motorsRunning = motorsOn,
             aircraftInAir = inAir,
+            flightMode = flightMode,
+            ultrasonicHeightMeters = ultrasonicHeightMeters,
+            isUltrasonicValid = isUltrasonicValid,
+            isRthActive = rthActive,
+            isAutoLanding = autoLanding,
+            isLowBatteryWarning = lowBatteryWarning,
+            isCompassError = compassError,
+            isSportMode = sportMode,
         )
     }
 
@@ -446,6 +497,7 @@ object DumlProtocol {
                     0
                 }
                 val temperatureCelsius = if (temperatureRaw in 100..1000) temperatureRaw * 0.1f else null
+                val cycleCount32P = if (payload.size >= 24) byteBuffer.getShort(22).toInt() and 0xFFFF else null
                 return BatteryTelemetry(
                     percentage = percentage,
                     packVoltageMillivolts = voltageMillivolts,
@@ -454,6 +506,7 @@ object DumlProtocol {
                     fullCapacityMilliampHours = fullCapacity,
                     temperatureCelsius = temperatureCelsius,
                     cellCount = cellCount,
+                    cycleCount = cycleCount32P,
                 )
             }
         }
@@ -481,6 +534,7 @@ object DumlProtocol {
                     0
                 }
                 val temperatureCelsius = if (temperatureRaw0 in 100..1000) temperatureRaw0 * 0.1f else null
+                val cycleCount32 = if (payload.size >= 22) byteBuffer.getShort(20).toInt() and 0xFFFF else null
                 return BatteryTelemetry(
                     percentage = percentage,
                     packVoltageMillivolts = voltageMillivolts0,
@@ -489,6 +543,7 @@ object DumlProtocol {
                     fullCapacityMilliampHours = fullCapacity0,
                     temperatureCelsius = temperatureCelsius,
                     cellCount = cellCount0,
+                    cycleCount = cycleCount32,
                 )
             }
         }
@@ -499,6 +554,7 @@ object DumlProtocol {
         val remMah16 = byteBuffer.getShort(3).toInt() and 0xFFFF
         val fullMah16 = byteBuffer.getShort(5).toInt() and 0xFFFF
         val life16 = if (payload.size >= 8) payload[7].toInt() and 0xFF else null
+        val cycleCount16 = if (payload.size >= 10) byteBuffer.getShort(8).toInt() and 0xFFFF else null
         val isPlausible16Bit = (soc16 in 0..100) &&
             (packMv16 in 3000..35000) &&
             (fullMah16 in 500..50000 && remMah16 in 0..fullMah16) &&
@@ -529,6 +585,8 @@ object DumlProtocol {
                 fullCapacityMilliampHours = fullMah16,
                 cellCount = cellVoltages16.size.takeIf { it > 0 },
                 cellVoltagesMillivolts = cellVoltages16,
+                lifetimeHealthPercentage = life16,
+                cycleCount = cycleCount16,
             )
         }
 
@@ -543,6 +601,8 @@ object DumlProtocol {
                 (fullMah16P in 500..50000 && remMah16P in 0..fullMah16P)
             if (isPlausible16BitPrefixed) {
                 val currentMa16P = if (payload.size >= 18) byteBuffer.getShort(16).toInt() else null
+                val life16P = if (payload.size >= 10) payload[9].toInt() and 0xFF else null
+                val cycleCount16P = if (payload.size >= 12) byteBuffer.getShort(10).toInt() and 0xFFFF else null
                 val percentage16P = if (soc16P in 1..100) {
                     soc16P
                 } else if (fullMah16P > 0) {
@@ -556,6 +616,8 @@ object DumlProtocol {
                     currentMilliamps = currentMa16P,
                     remainingCapacityMilliampHours = remMah16P,
                     fullCapacityMilliampHours = fullMah16P,
+                    lifetimeHealthPercentage = life16P,
+                    cycleCount = cycleCount16P,
                 )
             }
         }
@@ -625,12 +687,29 @@ object DumlProtocol {
         if (rightStickHorizontal !in 200..1900 || rightStickVertical !in 200..1900) {
             return null
         }
+        val modeSwitch = if (payload.size >= 11) {
+            val rawMode = payload[10].toInt() and 0xFF
+            if (rawMode == 2) "SPORT" else "POSITION"
+        } else {
+            "POSITION"
+        }
+        val buttonByte = if (payload.size >= 12) payload[11].toInt() and 0xFF else 0
+        val rthButton = (buttonByte and 0x10) != 0
+        val pauseButton = (buttonByte and 0x20) != 0
+        val c1Button = (buttonByte and 0x04) != 0
+        val c2Button = (buttonByte and 0x08) != 0
+
         return RemoteControllerAxes(
             rightStickHorizontal = rightStickHorizontal,
             rightStickVertical = rightStickVertical,
             leftStickVertical = leftStickVertical,
             leftStickHorizontal = leftStickHorizontal,
             gimbalWheel = gimbalWheel,
+            flightModeSwitch = modeSwitch,
+            rthButtonPressed = rthButton,
+            pauseButtonPressed = pauseButton,
+            c1ButtonPressed = c1Button,
+            c2ButtonPressed = c2Button,
         )
     }
 
@@ -775,10 +854,18 @@ data class FlightControllerTelemetry(
     val batteryPercentage: Int,
     val motorsRunning: Boolean,
     val aircraftInAir: Boolean,
+    val flightMode: String = "P-GPS",
+    val ultrasonicHeightMeters: Float? = null,
+    val isUltrasonicValid: Boolean = false,
+    val isRthActive: Boolean = false,
+    val isAutoLanding: Boolean = false,
+    val isLowBatteryWarning: Boolean = false,
+    val isCompassError: Boolean = false,
+    val isSportMode: Boolean = false,
 )
 
 /**
- * Remote Controller physical stick and gimbal wheel positions (`0x06/0x05`).
+ * Remote Controller physical stick, switch, and button positions (`0x06/0x05`).
  */
 data class RemoteControllerAxes(
     val rightStickHorizontal: Int,
@@ -786,6 +873,11 @@ data class RemoteControllerAxes(
     val leftStickVertical: Int,
     val leftStickHorizontal: Int,
     val gimbalWheel: Int,
+    val flightModeSwitch: String = "POSITION",
+    val rthButtonPressed: Boolean = false,
+    val pauseButtonPressed: Boolean = false,
+    val c1ButtonPressed: Boolean = false,
+    val c2ButtonPressed: Boolean = false,
 )
 
 /**
@@ -810,7 +902,24 @@ data class BatteryTelemetry(
     val temperatureCelsius: Float? = null,
     val cellCount: Int? = null,
     val cellVoltagesMillivolts: List<Int> = emptyList(),
+    val lifetimeHealthPercentage: Int? = null,
+    val cycleCount: Int? = null,
 ) {
+    val powerWatts: Float?
+        get() = FlightDynamicsCalculator.calculatePowerWatts(packVoltageMillivolts, currentMilliamps)
+
+    val maxCellVoltageMillivolts: Int?
+        get() = cellVoltagesMillivolts.maxOrNull()
+
+    val minCellVoltageMillivolts: Int?
+        get() = cellVoltagesMillivolts.minOrNull()
+
+    val cellDeltaMillivolts: Int?
+        get() = FlightDynamicsCalculator.calculateCellDeltaMillivolts(cellVoltagesMillivolts)
+
+    val estimatedFlightTimeMinutes: Float?
+        get() = FlightDynamicsCalculator.calculateEstimatedFlightTimeMinutes(remainingCapacityMilliampHours, currentMilliamps)
+
     /**
      * Non-destructively merges another [BatteryTelemetry] into this instance.
      * Non-null fields from [newer] take precedence, preserving existing fields.
@@ -829,6 +938,8 @@ data class BatteryTelemetry(
             } else {
                 this.cellVoltagesMillivolts
             },
+            lifetimeHealthPercentage = newer.lifetimeHealthPercentage ?: this.lifetimeHealthPercentage,
+            cycleCount = newer.cycleCount ?: this.cycleCount,
         )
     }
 }

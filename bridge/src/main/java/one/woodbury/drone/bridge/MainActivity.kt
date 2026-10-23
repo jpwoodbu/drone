@@ -48,6 +48,7 @@ import one.woodbury.drone.bridge.usb.ConnectionPhase
 import one.woodbury.drone.bridge.usb.ControllerConnectionState
 import one.woodbury.drone.bridge.usb.LastDumlPacketInfo
 import one.woodbury.drone.bridge.usb.UsbAccessoryConnectionManager
+import one.woodbury.drone.flight.FlightDynamicsCalculator
 import one.woodbury.drone.bridge.usb.UsbAccessoryDescriptor
 import one.woodbury.drone.video.H264VideoDecoder
 
@@ -313,7 +314,9 @@ private fun DroneVideoFeedCard(
             KeyValueRow(
                 label = "Decoder Output",
                 value = if (metrics.framesDecoded > 0L) {
-                    "${metrics.videoWidth}×${metrics.videoHeight} (${metrics.framesDecoded} frames)"
+                    val fps = if (metrics.framesPerSecond > 0f) " · %.1f fps".format(metrics.framesPerSecond) else ""
+                    val mbps = if (metrics.bitrateKbps > 0L) " · %.2f Mbps".format(metrics.bitrateKbps / 1000.0) else ""
+                    "${metrics.videoWidth}×${metrics.videoHeight} (${metrics.framesDecoded} frames$fps$mbps)"
                 } else {
                     "Idle (0 frames)"
                 },
@@ -504,6 +507,19 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                     label = "Gimbal Wheel",
                     value = axes.gimbalWheel.toString(),
                 )
+                KeyValueRow(
+                    label = "Flight Mode Switch",
+                    value = axes.flightModeSwitch,
+                )
+                val buttonsList = mutableListOf<String>()
+                if (axes.rthButtonPressed) buttonsList.add("RTH")
+                if (axes.pauseButtonPressed) buttonsList.add("PAUSE")
+                if (axes.c1ButtonPressed) buttonsList.add("C1")
+                if (axes.c2ButtonPressed) buttonsList.add("C2")
+                KeyValueRow(
+                    label = "Hardware Buttons",
+                    value = if (buttonsList.isNotEmpty()) buttonsList.joinToString(", ") else "None",
+                )
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             }
 
@@ -543,8 +559,32 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                     if (capacityText != null) {
                         KeyValueRow(label = "Battery Capacity", value = capacityText)
                     }
+                    if (battery.powerWatts != null) {
+                        KeyValueRow(label = "Power Draw", value = "%.1f W".format(battery.powerWatts))
+                    }
+                    if (battery.estimatedFlightTimeMinutes != null) {
+                        KeyValueRow(
+                            label = "Estimated Flight Time",
+                            value = FlightDynamicsCalculator.formatEstimatedFlightTime(battery.estimatedFlightTimeMinutes),
+                        )
+                    }
                     if (battery.temperatureCelsius != null) {
                         KeyValueRow(label = "Battery Temp", value = "%.1f °C".format(battery.temperatureCelsius))
+                    }
+                    if (battery.lifetimeHealthPercentage != null) {
+                        KeyValueRow(label = "Battery Health (SOH)", value = "${battery.lifetimeHealthPercentage}%")
+                    }
+                    if (battery.cycleCount != null) {
+                        KeyValueRow(label = "Discharge Cycles", value = "${battery.cycleCount}")
+                    }
+                    if (battery.cellVoltagesMillivolts.isNotEmpty()) {
+                        KeyValueRow(
+                            label = "Cell Voltages",
+                            value = battery.cellVoltagesMillivolts.joinToString(" / ") { "${it}mV" },
+                        )
+                        if (battery.cellDeltaMillivolts != null) {
+                            KeyValueRow(label = "Cell Delta (Δ)", value = "${battery.cellDeltaMillivolts} mV")
+                        }
                     }
                 }
                 if (gimbal != null) {
@@ -562,21 +602,46 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                     )
                 }
                 if (telemetry != null) {
+                    KeyValueRow(label = "Flight Mode", value = telemetry.flightMode)
+                    val statusFlags = mutableListOf<String>()
+                    if (telemetry.isRthActive) statusFlags.add("RTH")
+                    if (telemetry.isAutoLanding) statusFlags.add("Auto-Landing")
+                    if (telemetry.isCompassError) statusFlags.add("Compass Error")
+                    if (telemetry.isSportMode) statusFlags.add("Sport Mode")
+                    if (statusFlags.isNotEmpty()) {
+                        KeyValueRow(label = "Autopilot Status", value = statusFlags.joinToString(", "))
+                    }
                     KeyValueRow(label = "GPS Satellites", value = telemetry.gpsSatellites.toString())
                     KeyValueRow(
                         label = "Coordinates",
                         value = "%.6f, %.6f".format(telemetry.latitudeDegrees, telemetry.longitudeDegrees),
                     )
-                    KeyValueRow(
-                        label = "Relative Altitude",
-                        value = "%.1f m".format(telemetry.relativeAltitudeMeters),
+                    val altSource = if (telemetry.isUltrasonicValid && telemetry.ultrasonicHeightMeters != null) "VPS" else "Barometer"
+                    val effectiveAlt = if (telemetry.isUltrasonicValid && telemetry.ultrasonicHeightMeters != null) telemetry.ultrasonicHeightMeters!! else telemetry.relativeAltitudeMeters
+                    KeyValueRow(label = "Altitude ($altSource)", value = "%.1f m".format(effectiveAlt))
+                    if (telemetry.ultrasonicHeightMeters != null) {
+                        KeyValueRow(label = "Ultrasonic Clearance", value = "%.2f m".format(telemetry.ultrasonicHeightMeters))
+                    }
+                    val groundSpeed = FlightDynamicsCalculator.calculateGroundSpeedMetersPerSecond(
+                        telemetry.velocityXMetersPerSecond,
+                        telemetry.velocityYMetersPerSecond,
                     )
+                    val climbRate = FlightDynamicsCalculator.calculateClimbRateMetersPerSecond(telemetry.velocityZMetersPerSecond)
                     KeyValueRow(
-                        label = "Attitude (P / R / Y)",
-                        value = "%.1f° / %.1f° / %.1f°".format(
+                        label = "Speed (H / V)",
+                        value = "%.1f m/s · %s%.1f m/s".format(
+                            groundSpeed,
+                            if (climbRate > 0.05f) "+" else "",
+                            climbRate,
+                        ),
+                    )
+                    val heading = FlightDynamicsCalculator.formatCompassHeading(telemetry.yawDegrees)
+                    KeyValueRow(
+                        label = "Attitude (P / R / HDG)",
+                        value = "%.1f° / %.1f° / %s".format(
                             telemetry.pitchDegrees,
                             telemetry.rollDegrees,
-                            telemetry.yawDegrees,
+                            heading,
                         ),
                     )
                     KeyValueRow(

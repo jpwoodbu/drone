@@ -7,6 +7,7 @@ import kotlin.math.PI
 import one.woodbury.drone.net.UdpBridgeProtocol
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -106,8 +107,10 @@ class DumlProtocolTest {
         buffer.putShort(24, 15)  // 1.5 deg pitch
         buffer.putShort(26, -20) // -2.0 deg roll
         buffer.putShort(28, 900) // 90.0 deg yaw
+        payload[30] = 5          // P-GPS flight mode
         buffer.putInt(32, 0x0C)  // motorsRunning + inAir
         payload[36] = 14         // 14 satellites
+        buffer.putShort(38, 14)  // 1.4 m ultrasonic height (14 decimeters)
         payload[40] = 84         // 84% battery
 
         val frame = DumlFrame(
@@ -132,6 +135,45 @@ class DumlProtocolTest {
         assertEquals(84, decoded.batteryPercentage)
         assertTrue(decoded.motorsRunning)
         assertTrue(decoded.aircraftInAir)
+        assertEquals("P-GPS", decoded.flightMode)
+        assertTrue(decoded.isUltrasonicValid)
+        assertEquals(1.4f, decoded.ultrasonicHeightMeters!!, 1e-3f)
+    }
+
+    @Test
+    fun decodeRemoteControllerAxes_extractsSticksSwitchesAndButtons() {
+        val payload = ByteArray(12)
+        val buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+        buffer.putShort(0, 1024) // Right stick H
+        buffer.putShort(2, 1100) // Right stick V
+        buffer.putShort(4, 1024) // Left stick V
+        buffer.putShort(6, 950)  // Left stick H
+        buffer.putShort(8, 1024) // Gimbal wheel
+        payload[10] = 2          // Sport mode switch
+        payload[11] = 0x14       // RTH (0x10) + C1 (0x04)
+
+        val frame = DumlFrame(
+            sourceModuleId = DumlProtocol.MODULE_REMOTE_CONTROLLER,
+            destinationModuleId = DumlProtocol.MODULE_MOBILE_APP,
+            sequenceNumber = 77,
+            commandType = 0x00,
+            commandSet = DumlProtocol.MODULE_REMOTE_CONTROLLER,
+            commandId = 0x05,
+            payload = payload,
+        )
+
+        val decoded = DumlProtocol.decodeRemoteControllerAxes(frame)
+        assertNotNull(decoded)
+        assertEquals(1024, decoded!!.rightStickHorizontal)
+        assertEquals(1100, decoded.rightStickVertical)
+        assertEquals(1024, decoded.leftStickVertical)
+        assertEquals(950, decoded.leftStickHorizontal)
+        assertEquals(1024, decoded.gimbalWheel)
+        assertEquals("SPORT", decoded.flightModeSwitch)
+        assertTrue(decoded.rthButtonPressed)
+        assertFalse(decoded.pauseButtonPressed)
+        assertTrue(decoded.c1ButtonPressed)
+        assertFalse(decoded.c2ButtonPressed)
     }
 
     @Test
