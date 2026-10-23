@@ -73,6 +73,77 @@ drone/
 
 ---
 
+## Hardware & DJI Product Compatibility
+
+The `:bridge` app connects to DJI remote controllers using the **Android Open
+Accessory (AOA 2.0)** protocol, parses DJI **DUML v1** telemetry packets
+(`0x55 0xCC` / `0x49 0x57`), and extracts raw **H.264 Annex-B** video chunks
+(`0x4A 0x57`). The USB accessory descriptor filter (`accessory_filter.xml`)
+matches any USB device with `manufacturer="DJI"`, as well as specific legacy
+model strings (`WM230`, `T600`, `AG410`, `com.dji.logiclink`, `WM160`).
+
+Because DJI retained this USB multiplexing and telemetry architecture across
+multiple drone generations, the `:bridge` app is expected to work with a wide
+range of DJI hardware:
+
+### 1. Guaranteed / Plug-and-Play Compatibility (DJI GO 4 & DJI GO Era)
+
+These models share the exact same AOA multiplex framing, DUML v1 telemetry
+structure, and H.264 video stream as the Mavic Air reference platform:
+
+| Product Family           | Aircraft Models                                                         | Remote Controller            | Protocol Notes                                                                                   |
+| :----------------------- | :---------------------------------------------------------------------- | :--------------------------- | :----------------------------------------------------------------------------------------------- |
+| **Mavic Series**         | **Mavic Air** (`WM230`)                                                 | `S01A`                       | Current reference platform. This is the hardware used during this project's initial development. |
+|                          | **Mavic Pro** & **Mavic Pro Platinum** (`WM220`)                        | `GL200A`                     | Identical AOA multiplexing and DUML telemetry packets.                                           |
+|                          | **Mavic 2 Pro** & **Mavic 2 Zoom** (`WM240`)                            | `RC1A`, `RC1B`               | OcuSync 2.0 with standard 1080p H.264 video stream.                                              |
+|                          | **Mavic 2 Enterprise** (Dual / Zoom / Advanced)                         | `RC1A`, `RC1B`               | Same USB AOA and DUML telemetry foundation.                                                      |
+| **Spark & Mini**         | **DJI Spark** (`WM100`)                                                 | `GL100A`                     | Supported when connecting the remote to the phone via USB/OTG cable.                             |
+|                          | **Mavic Mini** (`WM160`) & **DJI Mini SE**                              | `MR1SS5`, `MR1SD2`           | Enhanced Wi-Fi remote; outputs DUML v1 and H.264 over USB AOA.                                   |
+| **Phantom Series**       | **Phantom 4** (Standard / Advanced / Pro / V2.0 / RTK)                  | `GL300E`, `GL300F`, `GL300K` | Standard remotes with USB-A output ports.                                                        |
+|                          | **Phantom 3 Advanced** & **Phantom 3 Professional**                     | `GL300A`, `GL300B`, `GL300C` | Lightbridge over USB (matches `model="T600"` filter).                                            |
+| **Inspire Series**       | **Inspire 1** / **Inspire 1 Pro/RAW** (`T600`)                          | `GL658A`, `GL658B`           | The origin of the `model="T600"` accessory filter.                                               |
+|                          | **Inspire 2** (`WM620`)                                                 | `GL6D10A`                    | Same Lightbridge 2 AOA multiplex framing and DUML stream.                                        |
+| **Matrice (Enterprise)** | **Matrice 100**, **Matrice 200 / 210 / 210 RTK**, **Matrice 600 / Pro** | `AG410`, `T600`, `GL6D10A`   | Matches `model="AG410"` and `model="T600"` filters.                                              |
+
+### 2. High Compatibility (Modern DJI Fly with `RC-N1` / `RC-N2` / `RC-N3`)
+
+Modern consumer drones flown using standard phone-clamp USB remote controllers:
+
+- **Aircraft Models**: **Mini 2**, **Mini 3 / Mini 3 Pro**, **Mini 4 Pro**,
+  **Mavic Air 2**, **Air 2S**, **Air 3 / 3S**, **Mavic 3 / 3 Classic / 3 Pro**.
+- **Remote Controllers**: **`RC-N1`**, **`RC-N2`**, **`RC-N3`**.
+- **Compatibility Status**:
+  - **USB & Video**: These controllers continue to use Android Open Accessory
+    (AOA) and stream standard H.264 LiveView video chunks.
+  - **Telemetry**: Core passive telemetry (GPS coordinates, relative altitude,
+    ground speed, Euler attitude angles, satellites, battery) is
+    backwards-compatible. Newer aircraft include extended payload fields, but
+    our parser in `DumlProtocol.kt` safely reads standard offsets.
+  - **Codec Note**: If a newer drone is configured to transmit video exclusively
+    in H.265/HEVC rather than H.264, the hardware video decoder in
+    `H264VideoDecoder.kt` would need to instantiate `video/hevc` rather than
+    `video/avc`.
+
+### 3. Incompatible Hardware
+
+The bridge app is **not** compatible with:
+
+- **Integrated-Screen Remotes (`DJI RC`, `DJI RC 2`, `DJI RC Pro`,
+  `Smart Controller`)**: These remotes feature a built-in display and internal
+  Android OS. There is no external phone connected via USB AOA (though the
+  `:bridge` or `:mirror` apps could theoretically be sideloaded directly onto
+  the controller).
+- **Direct-Phone Wi-Fi Drones**: Aircraft flown directly from a phone over Wi-Fi
+  without a physical remote controller (**Tello**, **Spark** in phone-only mode,
+  **Phantom 3 Standard**, **DJI Neo** in phone-only mode). These communicate
+  over Wi-Fi UDP sockets rather than a USB remote.
+- **DJI FPV & Avata Goggles (`Goggles V2`, `Goggles 2`, `Goggles 3`,
+  `Integra`)**: While DJI Goggles include a USB-C port for audience viewing,
+  they utilize a proprietary USB bulk streaming protocol rather than the
+  standard AOA accessory mode.
+
+---
+
 ## Design Decisions & Notes
 
 ### Remote Controller Battery Telemetry
@@ -101,25 +172,24 @@ specifically to `MODULE_BATTERY` `0x0B`).
 
 An earlier experimental query sending `0x00 / 0x05` with a payload of `0x01` to
 the center board (`MODULE_CENTER_BOARD` `0x05`), misdocumented in some
-unofficial references as a push request, was removed because command set
-`0x00` command `0x05` acts as a configuration/parameter write on DJI hardware
-and actively aborted the flight controller's motor-start routine (CSC stick
+unofficial references as a push request, was removed because command set `0x00`
+command `0x05` acts as a configuration/parameter write on DJI hardware and
+actively aborted the flight controller's motor-start routine (CSC stick
 command). Likewise, battery queries directed at the flight controller
 (`MODULE_FLIGHT_CONTROLLER` `0x03`) were eliminated. Only read-only GET queries
-targeting the battery BMS directly are transmitted. Synthetic linear
-estimation from voltage curves was deliberately avoided to ensure accurate
-remaining capacity reporting across varying flight loads and battery wear.
-Last-known BMS percentages are preserved across high-frequency cell voltage
-packets (`0x03`).
+targeting the battery BMS directly are transmitted. Synthetic linear estimation
+from voltage curves was deliberately avoided to ensure accurate remaining
+capacity reporting across varying flight loads and battery wear. Last-known BMS
+percentages are preserved across high-frequency cell voltage packets (`0x03`).
 
 ### Camera Gimbal Telemetry
 
 Camera gimbal telemetry (physical pitch, roll, and yaw angles) is decoded
-passively from unsolicited DUML push packets (`CMD_GIMBAL_PUSH_STATUS` =
-`0x05` from `MODULE_GIMBAL` `0x04`). Angles are encoded as 16-bit signed
-little-endian integers with $0.1^\circ$ precision ($0^\circ$ corresponds to
-level horizon, and negative angles down to $-90^\circ$ correspond to tilting
-downward toward nadir).
+passively from unsolicited DUML push packets (`CMD_GIMBAL_PUSH_STATUS` = `0x05`
+from `MODULE_GIMBAL` `0x04`). Angles are encoded as 16-bit signed little-endian
+integers with $0.1^\circ$ precision ($0^\circ$ corresponds to level horizon, and
+negative angles down to $-90^\circ$ correspond to tilting downward toward
+nadir).
 
 To guarantee flight safety and avoid bus contention or flight controller
 interference, no active outbound polling queries are issued for gimbal
@@ -127,8 +197,8 @@ telemetry. The telemetry streams passively across both `:bridge` and `:mirror`.
 
 ### Altitude Units and High-Altitude Ceiling Warning
 
-The `:mirror` application supports displaying relative altitude in either
-meters or international feet:
+The `:mirror` application supports displaying relative altitude in either meters
+or international feet:
 
 - **Meters Mode**: Formatted with 1 decimal place (e.g. `12.5 m`).
 - **Feet Mode**: Formatted as integer feet (e.g. `400 ft`) to optimize HUD
