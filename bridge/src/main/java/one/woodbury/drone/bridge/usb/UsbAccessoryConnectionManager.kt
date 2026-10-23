@@ -239,6 +239,20 @@ class UsbAccessoryConnectionManager(
     }
 
     /**
+     * Forcibly disconnects all active Quest 2 subscribers and pauses accepting new subscriptions.
+     */
+    fun disconnectAllSubscribers() {
+        udpBridgeSender.disconnectAllSubscribers()
+    }
+
+    /**
+     * Resumes accepting Quest 2 discovery heartbeats and bridge announcements.
+     */
+    fun resumeSubscribers() {
+        udpBridgeSender.resumeSubscribers()
+    }
+
+    /**
      * Releases all resources when the owning activity is destroyed.
      */
     fun shutdown() {

@@ -134,7 +134,7 @@ object FlightDynamicsCalculator {
     }
 
     /**
-     * Formats vertical climb rate without directional arrow prefixes.
+     * Formats vertical climb rate without directional arrow prefixes or positive plus signs.
      *
      * @param climbRateMetersPerSecond Climb rate in meters per second (positive for climb, negative for descent).
      * @param isImperial Whether to format in feet per minute (`ft/m`) instead of meters per second (`m/s`).
@@ -142,11 +142,16 @@ object FlightDynamicsCalculator {
     fun formatVerticalSpeed(climbRateMetersPerSecond: Float, isImperial: Boolean): String {
         return if (isImperial) {
             val feetPerMinute = climbRateMetersPerSecond * METERS_PER_SECOND_TO_FEET_PER_MINUTE
-            val sign = if (feetPerMinute > 0.5f) "+" else ""
-            "%s%.0f ft/m".format(sign, feetPerMinute)
+            val roundedFeetPerMinute = feetPerMinute.roundToInt()
+            val sanitizedFeetPerMinute = if (roundedFeetPerMinute == 0) 0 else roundedFeetPerMinute
+            "$sanitizedFeetPerMinute ft/m"
         } else {
-            val sign = if (climbRateMetersPerSecond > 0.05f) "+" else ""
-            "%s%.1f m/s".format(sign, climbRateMetersPerSecond)
+            val sanitizedMetersPerSecond = if (climbRateMetersPerSecond > -0.05f && climbRateMetersPerSecond < 0.05f) {
+                0.0f
+            } else {
+                climbRateMetersPerSecond
+            }
+            "%.1f m/s".format(sanitizedMetersPerSecond)
         }
     }
 

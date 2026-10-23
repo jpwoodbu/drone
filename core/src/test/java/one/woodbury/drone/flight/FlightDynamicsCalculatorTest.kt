@@ -78,16 +78,28 @@ class FlightDynamicsCalculatorTest {
         assertEquals("11 mph", speedMph)
 
         val climbMps = FlightDynamicsCalculator.formatVerticalSpeed(1.2f, isImperial = false)
-        assertEquals("+1.2 m/s", climbMps)
+        assertEquals("1.2 m/s", climbMps)
 
         val descentMps = FlightDynamicsCalculator.formatVerticalSpeed(-1.2f, isImperial = false)
         assertEquals("-1.2 m/s", descentMps)
 
+        val zeroMps = FlightDynamicsCalculator.formatVerticalSpeed(0.0f, isImperial = false)
+        assertEquals("0.0 m/s", zeroMps)
+
+        val nearZeroMps = FlightDynamicsCalculator.formatVerticalSpeed(-0.01f, isImperial = false)
+        assertEquals("0.0 m/s", nearZeroMps)
+
         val climbFpm = FlightDynamicsCalculator.formatVerticalSpeed(1.2f, isImperial = true)
-        assertEquals("+236 ft/m", climbFpm)
+        assertEquals("236 ft/m", climbFpm)
 
         val descentFpm = FlightDynamicsCalculator.formatVerticalSpeed(-1.2f, isImperial = true)
         assertEquals("-236 ft/m", descentFpm)
+
+        val zeroFpm = FlightDynamicsCalculator.formatVerticalSpeed(0.0f, isImperial = true)
+        assertEquals("0 ft/m", zeroFpm)
+
+        val nearZeroFpm = FlightDynamicsCalculator.formatVerticalSpeed(-0.001f, isImperial = true)
+        assertEquals("0 ft/m", nearZeroFpm)
 
         val distanceM = FlightDynamicsCalculator.formatDistance(125.0, isImperial = false)
         assertEquals("125 m", distanceM)

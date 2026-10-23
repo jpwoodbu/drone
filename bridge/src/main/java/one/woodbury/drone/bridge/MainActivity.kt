@@ -75,6 +75,8 @@ class MainActivity : ComponentActivity() {
                         videoDecoder = connectionManager.videoDecoder,
                         onScanClicked = { connectionManager.scanAndConnect() },
                         onQueryVersionClicked = { connectionManager.sendVersionQuery() },
+                        onDisconnectSubscribersClicked = { connectionManager.disconnectAllSubscribers() },
+                        onResumeSubscribersClicked = { connectionManager.resumeSubscribers() },
                         modifier = Modifier.padding(innerPadding),
                     )
                 }
@@ -105,6 +107,8 @@ fun ControllerDiagnosticsScreen(
     videoDecoder: H264VideoDecoder? = null,
     onScanClicked: () -> Unit,
     onQueryVersionClicked: () -> Unit,
+    onDisconnectSubscribersClicked: () -> Unit,
+    onResumeSubscribersClicked: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -128,6 +132,8 @@ fun ControllerDiagnosticsScreen(
 
         QuestUdpBridgeCard(
             state = state,
+            onDisconnectSubscribersClicked = onDisconnectSubscribersClicked,
+            onResumeSubscribersClicked = onResumeSubscribersClicked,
         )
 
         DroneVideoFeedCard(
@@ -146,6 +152,8 @@ fun ControllerDiagnosticsScreen(
 @Composable
 private fun QuestUdpBridgeCard(
     state: ControllerConnectionState,
+    onDisconnectSubscribersClicked: () -> Unit,
+    onResumeSubscribersClicked: () -> Unit,
 ) {
     val bridge = state.udpBridgeMetrics
     val hasActiveTarget = bridge.activeSubscribers.isNotEmpty()
@@ -166,14 +174,18 @@ private fun QuestUdpBridgeCard(
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = if (hasActiveTarget) "STREAMING" else "LISTENING",
+                    text = when {
+                        !bridge.isAcceptingSubscribers -> "PAUSED"
+                        hasActiveTarget -> "STREAMING"
+                        else -> "LISTENING"
+                    },
                     style = MaterialTheme.typography.labelLarge,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
-                    color = if (hasActiveTarget) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                    color = when {
+                        !bridge.isAcceptingSubscribers -> MaterialTheme.colorScheme.error
+                        hasActiveTarget -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
                     },
                 )
             }
@@ -196,10 +208,10 @@ private fun QuestUdpBridgeCard(
             )
             KeyValueRow(
                 label = "Quest 2 Subscriber(s)",
-                value = if (bridge.activeSubscribers.isNotEmpty()) {
-                    bridge.activeSubscribers.joinToString(", ")
-                } else {
-                    "Waiting for Quest 2 heartbeat…"
+                value = when {
+                    !bridge.isAcceptingSubscribers -> "Subscriptions paused"
+                    bridge.activeSubscribers.isNotEmpty() -> bridge.activeSubscribers.joinToString(", ")
+                    else -> "Waiting for Quest 2 heartbeat…"
                 },
             )
             KeyValueRow(
@@ -226,6 +238,24 @@ private fun QuestUdpBridgeCard(
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
+
+            Spacer(modifier = Modifier.height(4.dp))
+            if (!bridge.isAcceptingSubscribers) {
+                Button(
+                    onClick = onResumeSubscribersClicked,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(text = "Allow Subscribers")
+                }
+            } else {
+                OutlinedButton(
+                    onClick = onDisconnectSubscribersClicked,
+                    enabled = hasActiveTarget,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(text = "Disconnect All Subscribers")
+                }
+            }
         }
     }
 }
@@ -627,13 +657,11 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                         telemetry.velocityYMetersPerSecond,
                     )
                     val climbRate = FlightDynamicsCalculator.calculateClimbRateMetersPerSecond(telemetry.velocityZMetersPerSecond)
+                    val horizontalSpeedText = FlightDynamicsCalculator.formatGroundSpeed(groundSpeed, isImperial = false)
+                    val verticalSpeedText = FlightDynamicsCalculator.formatVerticalSpeed(climbRate, isImperial = false)
                     KeyValueRow(
                         label = "Speed (H / V)",
-                        value = "%.1f m/s · %s%.1f m/s".format(
-                            groundSpeed,
-                            if (climbRate > 0.05f) "+" else "",
-                            climbRate,
-                        ),
+                        value = "$horizontalSpeedText · $verticalSpeedText",
                     )
                     val heading = FlightDynamicsCalculator.formatCompassHeading(telemetry.yawDegrees)
                     KeyValueRow(
@@ -773,6 +801,8 @@ fun ControllerDiagnosticsScreenPreview() {
             ),
             onScanClicked = {},
             onQueryVersionClicked = {},
+            onDisconnectSubscribersClicked = {},
+            onResumeSubscribersClicked = {},
         )
     }
 }

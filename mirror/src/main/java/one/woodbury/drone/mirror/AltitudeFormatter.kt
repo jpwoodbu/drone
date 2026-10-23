@@ -9,14 +9,6 @@ enum class AltitudeUnit {
 }
 
 /**
- * Sensor source providing the current altitude measurement.
- */
-enum class AltitudeSource {
-    VPS,
-    BAROMETER,
-}
-
-/**
  * Utility for converting, formatting, and evaluating altitude measurements.
  */
 object AltitudeFormatter {
@@ -41,22 +33,6 @@ object AltitudeFormatter {
             AltitudeUnit.METERS -> "%.1f m".format(altitudeMeters)
             AltitudeUnit.FEET -> "%.0f ft".format(altitudeMeters * FEET_PER_METER)
         }
-    }
-
-    /**
-     * Formats [altitudeMeters] according to the selected [unit], appending the sensor [source] tag.
-     */
-    fun formatAltitudeWithSource(
-        altitudeMeters: Float,
-        source: AltitudeSource,
-        unit: AltitudeUnit,
-    ): String {
-        val formatted = formatAltitude(altitudeMeters, unit)
-        val sourceTag = when (source) {
-            AltitudeSource.VPS -> "VPS"
-            AltitudeSource.BAROMETER -> "BARO"
-        }
-        return "$formatted [$sourceTag]"
     }
 
     /**

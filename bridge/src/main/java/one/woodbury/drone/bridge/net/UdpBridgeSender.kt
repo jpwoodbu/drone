@@ -23,6 +23,7 @@ import one.woodbury.drone.net.UdpBridgeProtocol
  */
 data class UdpBridgeSenderMetrics(
     val isListening: Boolean = false,
+    val isAcceptingSubscribers: Boolean = true,
     val socketStatus: String = "Stopped",
     val nsdStatus: String = "Not registered",
     val lastSocketError: String? = null,
@@ -45,6 +46,7 @@ class UdpBridgeSender(
     private val onMetricsChanged: (UdpBridgeSenderMetrics) -> Unit,
 ) {
     private val isRunning = AtomicBoolean(false)
+    private val isAcceptingSubscribers = AtomicBoolean(true)
     private val sequenceCounter = AtomicInteger(1)
     private val outgoingDatagramQueue = LinkedBlockingQueue<ByteArray>(1024)
     private val subscribersByHost = ConcurrentHashMap<String, SubscriberEntry>()
@@ -97,6 +99,7 @@ class UdpBridgeSender(
     @Synchronized
     fun start() {
         if (isRunning.get()) return
+        isAcceptingSubscribers.set(true)
         try {
             acquireMulticastLock()
             val socket = DatagramSocket(null).apply {
@@ -174,6 +177,7 @@ class UdpBridgeSender(
     @Synchronized
     fun shutdown() {
         isRunning.set(false)
+        isAcceptingSubscribers.set(true)
         socketStatusText = "Stopped"
         nsdServer?.unregister()
         nsdServer = null
@@ -191,6 +195,25 @@ class UdpBridgeSender(
         releaseMulticastLock()
         outgoingDatagramQueue.clear()
         subscribersByHost.clear()
+        publishMetrics()
+    }
+
+    /**
+     * Forcibly disconnects all active Quest 2 subscribers, clears pending outgoing datagrams,
+     * and pauses accepting new subscriptions until [resumeSubscribers] is called.
+     */
+    fun disconnectAllSubscribers() {
+        isAcceptingSubscribers.set(false)
+        subscribersByHost.clear()
+        outgoingDatagramQueue.clear()
+        publishMetrics()
+    }
+
+    /**
+     * Resumes accepting Quest 2 discovery heartbeats and broadcasting bridge announcements.
+     */
+    fun resumeSubscribers() {
+        isAcceptingSubscribers.set(true)
         publishMetrics()
     }
 
@@ -217,7 +240,7 @@ class UdpBridgeSender(
     }
 
     private fun hasAnyDestination(): Boolean {
-        return subscribersByHost.isNotEmpty()
+        return isAcceptingSubscribers.get() && subscribersByHost.isNotEmpty()
     }
 
     private fun enqueueChannelPayload(channelType: Int, payload: ByteArray) {
@@ -270,6 +293,9 @@ class UdpBridgeSender(
                 val length = receivePacket.length
                 val senderAddress = receivePacket.address
                 if (senderAddress != null && UdpBridgeProtocol.isHeartbeatPacket(receiveBuffer, length)) {
+                    if (!isAcceptingSubscribers.get()) {
+                        continue
+                    }
                     val hostAddress = senderAddress.hostAddress
                     val localAddresses = UdpBridgeProtocol.queryLocalIpv4Addresses(applicationContext)
                         .map { it.ipv4Address }
@@ -397,6 +423,7 @@ class UdpBridgeSender(
         onMetricsChanged(
             UdpBridgeSenderMetrics(
                 isListening = isRunning.get(),
+                isAcceptingSubscribers = isAcceptingSubscribers.get(),
                 socketStatus = socketStatusText,
                 nsdStatus = nsdStatusText,
                 lastSocketError = lastErrorText,

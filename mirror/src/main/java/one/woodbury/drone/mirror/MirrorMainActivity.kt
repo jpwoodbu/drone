@@ -436,19 +436,17 @@ private fun TopTelemetryHudBar(
 
     val hasValidVps = telemetry?.isUltrasonicValid == true && telemetry.ultrasonicHeightMeters != null
     val effectiveAltitude = if (hasValidVps) telemetry!!.ultrasonicHeightMeters!! else telemetry?.relativeAltitudeMeters
-    val effectiveSource = if (hasValidVps) AltitudeSource.VPS else AltitudeSource.BAROMETER
     val altitudeText = if (effectiveAltitude != null) {
-        AltitudeFormatter.formatAltitudeWithSource(effectiveAltitude, effectiveSource, state.altitudeUnit)
+        AltitudeFormatter.formatAltitude(effectiveAltitude, state.altitudeUnit)
     } else {
         "—"
     }
     val isAltitudeWarning = effectiveAltitude != null && AltitudeFormatter.isHighAltitudeWarning(effectiveAltitude)
 
     val activeAlert = when {
-        telemetry?.isRthActive == true -> "RTH" to Color(0xFFD29922)
-        telemetry?.isAutoLanding == true -> "LANDING" to Color(0xFFD29922)
         telemetry?.isCompassError == true -> "COMPASS" to Color(0xFFF85149)
-        telemetry?.isSportMode == true -> "SPORT" to Color(0xFF58A6FF)
+        telemetry?.isAutoLanding == true -> "LANDING" to Color(0xFFD29922)
+        telemetry?.motorsRunning == true -> "MOTORS" to Color(0xFF3FB950)
         else -> null
     }
 

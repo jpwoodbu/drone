@@ -2,6 +2,7 @@ package one.woodbury.drone.mirror
 
 import android.content.Context
 import android.net.wifi.WifiManager
+import android.os.SystemClock
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -71,6 +72,7 @@ class UdpBridgeReceiver(
 
     private val isRunning = AtomicBoolean(false)
     private val heartbeatsSentCounter = AtomicLong(0L)
+    private val lastPacketReceivedTimestampMillis = AtomicLong(0L)
 
     @Volatile
     private var manualPhoneIp: String =
@@ -175,6 +177,7 @@ class UdpBridgeReceiver(
     @Synchronized
     fun start() {
         if (isRunning.get()) return
+        lastPacketReceivedTimestampMillis.set(0L)
         try {
             acquireMulticastLock()
             val socket = DatagramSocket(null).apply {
@@ -207,7 +210,10 @@ class UdpBridgeReceiver(
             }
             heartbeatScheduler = scheduler
             scheduler.scheduleAtFixedRate(
-                { sendDiscoveryHeartbeats(socket) },
+                {
+                    sendDiscoveryHeartbeats(socket)
+                    checkConnectionTimeout()
+                },
                 0L,
                 1_000L,
                 TimeUnit.MILLISECONDS,
@@ -261,6 +267,7 @@ class UdpBridgeReceiver(
     @Synchronized
     fun shutdown() {
         isRunning.set(false)
+        lastPacketReceivedTimestampMillis.set(0L)
         socketStatusText = "Stopped"
         nsdClient?.stopDiscovery()
         nsdClient = null
@@ -352,6 +359,7 @@ class UdpBridgeReceiver(
                         .map { it.ipv4Address }
                         .toSet()
                     if (senderAddress != null && senderHost != null && senderHost !in localAddresses) {
+                        lastPacketReceivedTimestampMillis.set(SystemClock.elapsedRealtime())
                         latestPhoneInetAddress = senderAddress
                         _receiverState.update { currentState ->
                             currentState.copy(
@@ -365,6 +373,7 @@ class UdpBridgeReceiver(
                 }
 
                 val dataPacket = UdpBridgeProtocol.tryParseDataPacket(receiveBuffer, length) ?: continue
+                lastPacketReceivedTimestampMillis.set(SystemClock.elapsedRealtime())
                 if (senderAddress != null) {
                     latestPhoneInetAddress = senderAddress
                 }
@@ -412,6 +421,7 @@ class UdpBridgeReceiver(
                     }
                 }
             } catch (_: SocketTimeoutException) {
+                checkConnectionTimeout()
                 refreshLocalInterfaces()
             } catch (exception: Exception) {
                 if (!isRunning.get()) break
@@ -536,7 +546,31 @@ class UdpBridgeReceiver(
         }
     }
 
+    /**
+     * Checks if packet reception has ceased from the phone bridge.
+     *
+     * If no announce or data packets have arrived within [CONNECTION_INACTIVITY_TIMEOUT_MILLIS],
+     * the active connection state is reset to disconnected (`phoneBridgeIp = null`).
+     */
+    private fun checkConnectionTimeout() {
+        val lastReceivedTimestampMillis = lastPacketReceivedTimestampMillis.get()
+        if (lastReceivedTimestampMillis > 0L &&
+            (SystemClock.elapsedRealtime() - lastReceivedTimestampMillis) > CONNECTION_INACTIVITY_TIMEOUT_MILLIS
+        ) {
+            if (_receiverState.value.phoneBridgeIp != null) {
+                latestPhoneInetAddress = null
+                _receiverState.update { currentState ->
+                    currentState.copy(
+                        phoneBridgeIp = null,
+                        lastSocketError = lastErrorText,
+                    )
+                }
+            }
+        }
+    }
+
     companion object {
+        private const val CONNECTION_INACTIVITY_TIMEOUT_MILLIS: Long = 2_500L
         private const val _preferencesFileName = "one.woodbury.drone.mirror.preferences"
         private const val _preferencePhoneBridgeIp = "preference_phone_bridge_ip"
         private const val _preferenceAltitudeUnit = "preference_altitude_unit"
