@@ -145,16 +145,10 @@ The `:bridge` app is not expected to be compatible with:
 
 ### Build Commands
 
-Run unit tests across all modules:
+Run all unit tests and static analysis:
 
 ```bash
-./gradlew testDebugUnitTest
-```
-
-Run Android lint and static analysis:
-
-```bash
-./gradlew lintDebug
+./gradlew check
 ```
 
 Assemble debug APKs:
