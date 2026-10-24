@@ -72,9 +72,7 @@ drone/
 
 The `:bridge` app connects to DJI remote controllers using the **Android Open
 Accessory (AOA 2.0)** protocol. The USB accessory descriptor filter
-(`accessory_filter.xml`) matches any USB device with `manufacturer="DJI"`, as
-well as specific legacy model strings (`WM230`, `T600`, `AG410`,
-`com.dji.logiclink`, `WM160`).
+(`accessory_filter.xml`) matches any USB device with `manufacturer="DJI"`.
 
 Because DJI retained this USB multiplexing and telemetry architecture across
 multiple drone generations, the `:bridge` app is expected to work with a wide
@@ -94,10 +92,10 @@ structure, and H.264 video stream as the Mavic Air reference platform:
 | **Spark & Mini**         | **DJI Spark** (`WM100`)                                                 | `GL100A`                     | Supported when connecting the remote to the phone via USB/OTG cable.                             |
 |                          | **Mavic Mini** (`WM160`) & **DJI Mini SE**                              | `MR1SS5`, `MR1SD2`           | Enhanced Wi-Fi remote; outputs DUML v1 and H.264 over USB AOA.                                   |
 | **Phantom Series**       | **Phantom 4** (Standard / Advanced / Pro / V2.0 / RTK)                  | `GL300E`, `GL300F`, `GL300K` | Standard remotes with USB-A output ports.                                                        |
-|                          | **Phantom 3 Advanced** & **Phantom 3 Professional**                     | `GL300A`, `GL300B`, `GL300C` | Lightbridge over USB (matches `model="T600"` filter).                                            |
-| **Inspire Series**       | **Inspire 1** / **Inspire 1 Pro/RAW** (`T600`)                          | `GL658A`, `GL658B`           | The origin of the `model="T600"` accessory filter.                                               |
+|                          | **Phantom 3 Advanced** & **Phantom 3 Professional**                     | `GL300A`, `GL300B`, `GL300C` | Lightbridge over USB.                                                                            |
+| **Inspire Series**       | **Inspire 1** / **Inspire 1 Pro/RAW** (`T600`)                          | `GL658A`, `GL658B`           | Lightbridge over USB.                                                                            |
 |                          | **Inspire 2** (`WM620`)                                                 | `GL6D10A`                    | Same Lightbridge 2 AOA multiplex framing and DUML stream.                                        |
-| **Matrice (Enterprise)** | **Matrice 100**, **Matrice 200 / 210 / 210 RTK**, **Matrice 600 / Pro** | `AG410`, `T600`, `GL6D10A`   | Matches `model="AG410"` and `model="T600"` filters.                                              |
+| **Matrice (Enterprise)** | **Matrice 100**, **Matrice 200 / 210 / 210 RTK**, **Matrice 600 / Pro** | `AG410`, `T600`, `GL6D10A`   | Lightbridge / Lightbridge 2 over USB.                                                            |
 
 ### 2. High Compatibility (Modern DJI Fly with `RC-N1` / `RC-N2` / `RC-N3`)
 
