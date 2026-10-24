@@ -70,13 +70,11 @@ drone/
 
 ## DJI Product Compatibility
 
-> [!IMPORTANT] This project was developed, tested, and verified **only** using
-> the original **DJI Mavic Air (`WM230`)** and its **`S01A` remote controller**.
-> No other aircraft or remote controllers have been tested.
->
-> The information below outlines potential compatibility or incompatibility
-> based on publicly documented protocol characteristics shared across DJI's
-> product lineup.
+**Important:** This project was developed, tested, and verified **only** using
+the original **DJI Mavic Air (`WM230`)** and its **`S01A` remote controller**.
+No other aircraft or remote controllers have been tested. The information below
+outlines potential compatibility or incompatibility based on publicly documented
+protocol characteristics shared across DJI's product lineup.
 
 The `:bridge` app connects to DJI remote controllers using the **Android Open
 Accessory (AOA 2.0)** protocol. The USB accessory descriptor filter
@@ -88,19 +86,19 @@ These models are believed to share the same USB AOA multiplex framing, DUML v1
 telemetry structures, and H.264 video streams as the Mavic Air reference
 platform:
 
-| Product Family           | Aircraft Models                                                         | Remote Controller            | Protocol Notes                                                                               |
-| :----------------------- | :---------------------------------------------------------------------- | :--------------------------- | :------------------------------------------------------------------------------------------- |
-| **Mavic Series**         | **Mavic Air** (`WM230`)                                                 | `S01A`                       | Reference platform used for development and flight verification.                             |
-|                          | **Mavic Pro** & **Mavic Pro Platinum** (`WM220`)                        | `GL200A`                     | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
-|                          | **Mavic 2 Pro** & **Mavic 2 Zoom** (`WM240`)                            | `RC1A`, `RC1B`               | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
-|                          | **Mavic 2 Enterprise** (Dual / Zoom / Advanced)                         | `RC1A`, `RC1B`               | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
+| Product Family           | Aircraft Models                                                         | Remote Controller            | Protocol Notes                                                                                 |
+| :----------------------- | :---------------------------------------------------------------------- | :--------------------------- | :--------------------------------------------------------------------------------------------- |
+| **Mavic Series**         | **Mavic Air** (`WM230`)                                                 | `S01A`                       | Reference platform used for development and flight verification.                               |
+|                          | **Mavic Pro** & **Mavic Pro Platinum** (`WM220`)                        | `GL200A`                     | Expected to share the same AOA multiplex framing and DUML telemetry.                           |
+|                          | **Mavic 2 Pro** & **Mavic 2 Zoom** (`WM240`)                            | `RC1A`, `RC1B`               | Expected to share the same AOA multiplex framing and DUML telemetry.                           |
+|                          | **Mavic 2 Enterprise** (Dual / Zoom / Advanced)                         | `RC1A`, `RC1B`               | Expected to share the same AOA multiplex framing and DUML telemetry.                           |
 | **Spark & Mini**         | **DJI Spark** (`WM100`)                                                 | `GL100A`                     | Requires a USB OTG cable; expected to share the same AOA multiplex framing and DUML telemetry. |
-|                          | **Mavic Mini** (`WM160`) & **DJI Mini SE**                              | `MR1SS5`, `MR1SD2`           | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
-| **Phantom Series**       | **Phantom 4** (Standard / Advanced / Pro / V2.0 / RTK)                  | `GL300E`, `GL300F`, `GL300K` | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
-|                          | **Phantom 3 Advanced** & **Phantom 3 Professional**                     | `GL300A`, `GL300B`, `GL300C` | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
-| **Inspire Series**       | **Inspire 1** / **Inspire 1 Pro/RAW** (`T600`)                          | `GL658A`, `GL658B`           | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
-|                          | **Inspire 2** (`WM620`)                                                 | `GL6D10A`                    | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
-| **Matrice (Enterprise)** | **Matrice 100**, **Matrice 200 / 210 / 210 RTK**, **Matrice 600 / Pro** | `AG410`, `T600`, `GL6D10A`   | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
+|                          | **Mavic Mini** (`WM160`) & **DJI Mini SE**                              | `MR1SS5`, `MR1SD2`           | Expected to share the same AOA multiplex framing and DUML telemetry.                           |
+| **Phantom Series**       | **Phantom 4** (Standard / Advanced / Pro / V2.0 / RTK)                  | `GL300E`, `GL300F`, `GL300K` | Expected to share the same AOA multiplex framing and DUML telemetry.                           |
+|                          | **Phantom 3 Advanced** & **Phantom 3 Professional**                     | `GL300A`, `GL300B`, `GL300C` | Expected to share the same AOA multiplex framing and DUML telemetry.                           |
+| **Inspire Series**       | **Inspire 1** / **Inspire 1 Pro/RAW** (`T600`)                          | `GL658A`, `GL658B`           | Expected to share the same AOA multiplex framing and DUML telemetry.                           |
+|                          | **Inspire 2** (`WM620`)                                                 | `GL6D10A`                    | Expected to share the same AOA multiplex framing and DUML telemetry.                           |
+| **Matrice (Enterprise)** | **Matrice 100**, **Matrice 200 / 210 / 210 RTK**, **Matrice 600 / Pro** | `AG410`, `T600`, `GL6D10A`   | Expected to share the same AOA multiplex framing and DUML telemetry.                           |
 
 ### 2. Possible Compatibility (Modern DJI Fly with `RC-N1` / `RC-N2` / `RC-N3`)
 
