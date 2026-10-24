@@ -70,65 +70,66 @@ drone/
 
 ## DJI Product Compatibility
 
+> [!IMPORTANT] This project was developed, tested, and verified **only** using
+> the original **DJI Mavic Air (`WM230`)** and its **`S01A` remote controller**.
+> No other aircraft or remote controllers have been tested.
+>
+> The information below outlines potential compatibility or incompatibility
+> based on publicly documented protocol characteristics shared across DJI's
+> product lineup.
+
 The `:bridge` app connects to DJI remote controllers using the **Android Open
 Accessory (AOA 2.0)** protocol. The USB accessory descriptor filter
 (`accessory_filter.xml`) matches any USB device with `manufacturer="DJI"`.
 
-Because DJI retained this USB multiplexing and telemetry architecture across
-multiple drone generations, the `:bridge` app is expected to work with a wide
-range of DJI hardware:
+### 1. Likely Compatible (DJI GO 4 & DJI GO Era)
 
-### 1. Guaranteed / Plug-and-Play Compatibility (DJI GO 4 & DJI GO Era)
+These models are believed to share the same USB AOA multiplex framing, DUML v1
+telemetry structures, and H.264 video streams as the Mavic Air reference
+platform:
 
-These models share the exact same AOA multiplex framing, DUML v1 telemetry
-structure, and H.264 video stream as the Mavic Air reference platform:
+| Product Family           | Aircraft Models                                                         | Remote Controller            | Protocol Notes                                                                               |
+| :----------------------- | :---------------------------------------------------------------------- | :--------------------------- | :------------------------------------------------------------------------------------------- |
+| **Mavic Series**         | **Mavic Air** (`WM230`)                                                 | `S01A`                       | Reference platform used for development and flight verification.                             |
+|                          | **Mavic Pro** & **Mavic Pro Platinum** (`WM220`)                        | `GL200A`                     | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
+|                          | **Mavic 2 Pro** & **Mavic 2 Zoom** (`WM240`)                            | `RC1A`, `RC1B`               | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
+|                          | **Mavic 2 Enterprise** (Dual / Zoom / Advanced)                         | `RC1A`, `RC1B`               | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
+| **Spark & Mini**         | **DJI Spark** (`WM100`)                                                 | `GL100A`                     | Requires a USB OTG cable; expected to share the same AOA multiplex framing and DUML telemetry. |
+|                          | **Mavic Mini** (`WM160`) & **DJI Mini SE**                              | `MR1SS5`, `MR1SD2`           | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
+| **Phantom Series**       | **Phantom 4** (Standard / Advanced / Pro / V2.0 / RTK)                  | `GL300E`, `GL300F`, `GL300K` | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
+|                          | **Phantom 3 Advanced** & **Phantom 3 Professional**                     | `GL300A`, `GL300B`, `GL300C` | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
+| **Inspire Series**       | **Inspire 1** / **Inspire 1 Pro/RAW** (`T600`)                          | `GL658A`, `GL658B`           | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
+|                          | **Inspire 2** (`WM620`)                                                 | `GL6D10A`                    | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
+| **Matrice (Enterprise)** | **Matrice 100**, **Matrice 200 / 210 / 210 RTK**, **Matrice 600 / Pro** | `AG410`, `T600`, `GL6D10A`   | Expected to share the same AOA multiplex framing and DUML telemetry.                         |
 
-| Product Family           | Aircraft Models                                                         | Remote Controller            | Protocol Notes                                                                                   |
-| :----------------------- | :---------------------------------------------------------------------- | :--------------------------- | :----------------------------------------------------------------------------------------------- |
-| **Mavic Series**         | **Mavic Air** (`WM230`)                                                 | `S01A`                       | Current reference platform. This is the hardware used during this project's initial development. |
-|                          | **Mavic Pro** & **Mavic Pro Platinum** (`WM220`)                        | `GL200A`                     | Identical AOA multiplexing and DUML telemetry packets.                                           |
-|                          | **Mavic 2 Pro** & **Mavic 2 Zoom** (`WM240`)                            | `RC1A`, `RC1B`               | OcuSync 2.0 with standard 1080p H.264 video stream.                                              |
-|                          | **Mavic 2 Enterprise** (Dual / Zoom / Advanced)                         | `RC1A`, `RC1B`               | Same USB AOA and DUML telemetry foundation.                                                      |
-| **Spark & Mini**         | **DJI Spark** (`WM100`)                                                 | `GL100A`                     | Supported when connecting the remote to the phone via USB/OTG cable.                             |
-|                          | **Mavic Mini** (`WM160`) & **DJI Mini SE**                              | `MR1SS5`, `MR1SD2`           | Enhanced Wi-Fi remote; outputs DUML v1 and H.264 over USB AOA.                                   |
-| **Phantom Series**       | **Phantom 4** (Standard / Advanced / Pro / V2.0 / RTK)                  | `GL300E`, `GL300F`, `GL300K` | Standard remotes with USB-A output ports.                                                        |
-|                          | **Phantom 3 Advanced** & **Phantom 3 Professional**                     | `GL300A`, `GL300B`, `GL300C` | Lightbridge over USB.                                                                            |
-| **Inspire Series**       | **Inspire 1** / **Inspire 1 Pro/RAW** (`T600`)                          | `GL658A`, `GL658B`           | Lightbridge over USB.                                                                            |
-|                          | **Inspire 2** (`WM620`)                                                 | `GL6D10A`                    | Same Lightbridge 2 AOA multiplex framing and DUML stream.                                        |
-| **Matrice (Enterprise)** | **Matrice 100**, **Matrice 200 / 210 / 210 RTK**, **Matrice 600 / Pro** | `AG410`, `T600`, `GL6D10A`   | Lightbridge / Lightbridge 2 over USB.                                                            |
-
-### 2. High Compatibility (Modern DJI Fly with `RC-N1` / `RC-N2` / `RC-N3`)
+### 2. Possible Compatibility (Modern DJI Fly with `RC-N1` / `RC-N2` / `RC-N3`)
 
 Modern consumer drones flown using standard phone-clamp USB remote controllers:
 
 - **Aircraft Models**: **Mini 2**, **Mini 3 / Mini 3 Pro**, **Mini 4 Pro**,
   **Mavic Air 2**, **Air 2S**, **Air 3 / 3S**, **Mavic 3 / 3 Classic / 3 Pro**.
 - **Remote Controllers**: **`RC-N1`**, **`RC-N2`**, **`RC-N3`**.
-- **Compatibility Status**:
-  - **USB & Video**: These controllers continue to use Android Open Accessory
-    (AOA) and stream standard H.264 LiveView video chunks.
-  - **Telemetry**: Core passive telemetry (GPS coordinates, relative altitude,
-    ground speed, Euler attitude angles, satellites, battery) is
-    backwards-compatible. Newer aircraft include extended payload fields, but
-    our parser in `DumlProtocol.kt` safely reads standard offsets.
-  - **Codec Note**: If a newer drone is configured to transmit video exclusively
-    in H.265/HEVC rather than H.264, the hardware video decoder in
-    `H264VideoDecoder.kt` would need to instantiate `video/hevc` rather than
-    `video/avc`.
+- **Potential Compatibility Factors**:
+  - **USB & Video**: These controllers also negotiate Android Open Accessory
+    (AOA) and stream H.264 video chunks. Note that if a newer aircraft transmits
+    video in H.265/HEVC instead of H.264, the hardware video decoder in `:core`
+    would need to be updated to handle `video/hevc`.
+  - **Telemetry**: Core passive telemetry (coordinates, relative altitude,
+    ground speed, attitude angles, satellites, battery) may be
+    backwards-compatible, but newer models often use extended payload offsets
+    that have not been tested with this parser.
 
 ### 3. Incompatible Hardware
 
-The bridge app is **not** compatible with:
+The `:bridge` app is not expected to be compatible with:
 
 - **Integrated-Screen Remotes (`DJI RC`, `DJI RC 2`, `DJI RC Pro`,
   `Smart Controller`)**: These remotes feature a built-in display and internal
   Android OS. There is no external phone connected via USB AOA (though the
-  `:bridge` or `:mirror` apps could theoretically be sideloaded directly onto
-  the controller).
+  `:bridge` app could theoretically be sideloaded directly onto the controller).
 - **Direct-Phone Wi-Fi Drones**: Aircraft flown directly from a phone over Wi-Fi
   without a physical remote controller (**Tello**, **Spark** in phone-only mode,
-  **Phantom 3 Standard**, **DJI Neo** in phone-only mode). These communicate
-  over Wi-Fi UDP sockets rather than a USB remote.
+  **Phantom 3 Standard**, **DJI Neo** in phone-only mode).
 - **DJI FPV & Avata Goggles (`Goggles V2`, `Goggles 2`, `Goggles 3`,
   `Integra`)**: While DJI Goggles include a USB-C port for audience viewing,
   they utilize a proprietary USB bulk streaming protocol rather than the
