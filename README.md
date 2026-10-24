@@ -1,59 +1,56 @@
 # Drone: Mavic Air USB Bridge & Mirror
 
-A native, multi-module Android application suite for operating the DJI Mavic Air
-(`U11X` / `wm230`) using its native `S01A` remote controller over Android Open
-Accessory (AOA 2.0) USB without requiring the official DJI Mobile SDK, cloud
-accounts, or internet connectivity.
+A multi-module Android project (i.e. two applications) for operating the DJI
+Mavic Air (possibly other DJI models too) using a VR headset for viewing the
+camera feed and telemetry, and the handheld DJI controller for flight control.
+These apps do not use the official DJI Mobile SDK, they do not require any cloud
+accounts or internet connectivity and they do not collect any data.
 
-The system streams live 720p H.264 video and flight telemetry across a local
-Wi-Fi link to a companion device (e.g. Meta Quest flat app / not VR).
+The reason there are two applications is because the Meta Quest headsets (my
+target VR device) do not support connecting directly to the handheld DJI
+controller. The **bridge** app is meant to run on a phone connected to the DJI
+controller via USB. It collects the video feed and telemetry data and relays it
+via Wi-Fi to the **mirror** app, which is meant to run on a Meta Quest VR
+headset. The **bridge** app can run in the background and works with your phone
+screen turned off and your phone in your pocket.
 
-This app is meant to solve these problems:
+This project is meant to solve these problems:
 
 - The Mavic Air remote control phone clamps are too small for modern phones.
-- The DJI-made Android applications for the Mavic Air may not work on modern
+- The official DJI Android applications for the Mavic Air may not work on modern
   Android phones.
 - Phone screens are difficult to see in bright sunlight.
 
-The intended mode of operation is that you will fly the drone with the DJI
-remote control with it connected via USB to an Android phone in your pocket
-running the bridge app. A VR headset like a Meta Quest, runs the mirror app
-while being connected via Wi-Fi to your phone. The VR headset will be able to
-display in 2D the telemetry and video feed from the drone.
-
-Note that the OS on the Meta Quest headsets does not include the needed software
-to connect to a USB device like the DJI remote control. If it did, it would be
-interesting to connect straight from the Meta Quest to the DJI remote control
-via USB.
-
----
+The **mirror** app is a standard flat 2D Android app. It could technically run
+on Android devices other than a VR headset. There's not any clear value in
+making it a VR immersive app since the video feed from the Mavic Air is not
+stereoscopic and it's helpful to use the passthrough feature on Meta Quest
+headsets to see your surroundings, including the drone itself, while having the
+**mirror** app only occupy a small portion of your field of view.
 
 ## Architecture
 
-The project is structured into three clean, symmetric Gradle modules:
+The project is structured into three Gradle modules:
 
 ```
 drone/
-├── core/     # Pure Kotlin/Android protocol library (:core)
+├── core/     # Protocol library (:core)
 ├── bridge/   # USB AOA host and UDP network bridge (:bridge)
-└── mirror/   # Low-latency video viewer (:mirror)
+└── mirror/   # Telemetry and video viewer (:mirror)
 ```
 
-1. **`:core` (`one.woodbury.drone.core`)**:
+1. **`:core`**:
    - Implements DUML v1 (DJI Universal Markup Language) packet framing, parsing,
-     and serialization.
-   - Calculates DUML CRC-8 (polynomial `0x77`) and CRC-16 (polynomial `0x3692`)
-     checksums.
-   - Demultiplexes AOA outer frames (`0x55 0xCC`) into DUML telemetry
-     (`0x49 0x57`) and Annex-B H.264 video streams (`0x4A 0x57`).
-   - Implements the lightweight UDP packetization and discovery protocol over
-     port `5600`.
+     validation, and serialization.
+   - Demultiplexes DJI's Android Open Accessory (AOA) envelope into DUML
+     telemetry and H.264 video streams.
+   - Implements the UDP packetization and discovery protocol over port `5600`.
 
-2. **`:bridge` (`one.woodbury.drone.bridge`)**:
-   - Runs on the Android device tethered to the `S01A` remote controller via
+2. **`:bridge`**:
+   - Runs on the Android device connected to the `S01A` remote controller via
      USB.
    - Uses Android's `UsbManager` AOA 2.0 interface to stream control packets and
-     incoming video without proprietary native libraries.
+     incoming video.
    - Advertises the bridge service on the local network via mDNS
      (`_drone-bridge._udp.`).
    - Actively polls the aircraft BMS (Battery Management System) at 1 Hz for
@@ -62,25 +59,22 @@ drone/
      Wi-Fi locks to maintain low-latency streaming even when the phone screen is
      turned off.
 
-3. **`:mirror` (`one.woodbury.drone.mirror`)**:
-   - Runs on another Android device (e.g. Meta Quest headset).
-   - Discovers the phone bridge automatically over the local Wi-Fi subnet via
-     mDNS and transmits 1 Hz keepalive heartbeats to port `5600`.
+3. **`:mirror`**:
+   - Runs on another Android device (e.g. Meta Quest VR headset).
+   - Discovers the phone bridge automatically over the local Wi-Fi via mDNS and
+     transmits 1 Hz keepalive heartbeats to port `5600`.
    - Decodes H.264 video using hardware `MediaCodec` and displays it onto a
      Compose/Surface texture.
-   - Renders live telemetry including aircraft BMS battery percentage, flight
-     controller OSD metrics, GPS satellites, orientation angles, and velocities.
+   - Renders live drone telemetry (e.g. battery state, altitude/attitude, GPS
+     visibility state, etc.)
 
----
-
-## Hardware & DJI Product Compatibility
+## DJI Product Compatibility
 
 The `:bridge` app connects to DJI remote controllers using the **Android Open
-Accessory (AOA 2.0)** protocol, parses DJI **DUML v1** telemetry packets
-(`0x55 0xCC` / `0x49 0x57`), and extracts raw **H.264 Annex-B** video chunks
-(`0x4A 0x57`). The USB accessory descriptor filter (`accessory_filter.xml`)
-matches any USB device with `manufacturer="DJI"`, as well as specific legacy
-model strings (`WM230`, `T600`, `AG410`, `com.dji.logiclink`, `WM160`).
+Accessory (AOA 2.0)** protocol. The USB accessory descriptor filter
+(`accessory_filter.xml`) matches any USB device with `manufacturer="DJI"`, as
+well as specific legacy model strings (`WM230`, `T600`, `AG410`,
+`com.dji.logiclink`, `WM160`).
 
 Because DJI retained this USB multiplexing and telemetry architecture across
 multiple drone generations, the `:bridge` app is expected to work with a wide
@@ -141,8 +135,6 @@ The bridge app is **not** compatible with:
   `Integra`)**: While DJI Goggles include a USB-C port for audience viewing,
   they utilize a proprietary USB bulk streaming protocol rather than the
   standard AOA accessory mode.
-
----
 
 ## Design Decisions & Notes
 
@@ -223,8 +215,6 @@ than authentic hardware or firmware identifiers, they are omitted from the
 `:bridge` diagnostic user interface. Genuine module firmware versions are
 instead parsed dynamically from inbound DUML version push packets and queries.
 
----
-
 ## Building and Testing
 
 ### Prerequisites
@@ -257,3 +247,39 @@ Generated APKs:
 
 - Bridge App: `bridge/build/outputs/apk/debug/bridge-debug.apk`
 - Mirror App: `mirror/build/outputs/apk/debug/mirror-debug.apk`
+
+## Disclaimers & Legal Notices
+
+### Aviation Safety & Regulatory Compliance
+
+Operating unmanned aircraft systems (drones) involves inherent operational and
+safety risks. Pilots are solely responsible for ensuring safe operation of their
+aircraft in compliance with all applicable local laws, civil aviation authority
+regulations (such as FAA Part 107 or Recreational regulations in the United
+States), airspace authorizations, and Visual Line of Sight (VLOS) requirements.
+Do not operate aircraft in a manner that endangers people, property, or other
+airspace users.
+
+### Disclaimer of Liability
+
+This software is provided "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. In no event shall the author or
+contributors be liable for any direct, indirect, incidental, special, exemplary,
+or consequential damages (including, but not limited to, loss of aircraft,
+crashes, flyaways, hardware damage, personal injury, or property damage) however
+caused and on any theory of liability, whether in contract, strict liability, or
+tort (including negligence or otherwise) arising in any way out of the use of
+this software, even if advised of the possibility of such damage.
+
+### Trademarks
+
+"DJI", "Mavic", "Spark", "Phantom", "Inspire", "OcuSync", "Lightbridge", and
+other associated marks are registered trademarks of SZ DJI Technology Co., Ltd.
+This is an independent open-source project that is neither affiliated with,
+authorized, sponsored, endorsed, nor supported by SZ DJI Technology Co., Ltd.
+
+## Acknowledgments
+
+This project is made possible thanks to the protocol research and documentation
+shared by the open-source community.
