@@ -85,8 +85,13 @@ fun FlightModesDialog(
                 )
                 FlightModeItem(
                     name = "AUTO-LAND",
-                    summary = "Automated / Confirmed Landing",
-                    description = "Automated descent at a controlled vertical rate or stick-confirmed final landing descent through Landing Protection, shutting off motors upon ground contact.",
+                    summary = "Automated Landing",
+                    description = "Automated descent at a controlled vertical rate, shutting off motors upon ground contact. Can be engaged in flight by holding the Fn button on the DJI remote controller for 2 seconds. The remote controller emits a repeating two-beep pattern throughout the landing sequence.",
+                )
+                FlightModeItem(
+                    name = "FORCE-LAND",
+                    summary = "Forced / Confirmed Landing",
+                    description = "Forced touchdown descent, shutting off the motors upon ground contact. Active during critical low-battery forced landings or when the pilot holds the left stick (throttle) down to override Landing Protection.",
                 )
                 FlightModeItem(
                     name = "AUTO-TAKEOFF",

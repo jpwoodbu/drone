@@ -47,6 +47,18 @@ object DumlProtocol {
     const val CMD_GIMBAL_CONTROL: Int = 0x01
     const val CMD_GIMBAL_PUSH_STATUS: Int = 0x05
 
+    /** DUML command IDs for flight controller (`MODULE_FLIGHT_CONTROLLER`) operations. */
+    const val CMD_FLIGHT_CONTROLLER_FUNCTION_CONTROL: Int = 0x2A
+
+    /** `DataFlycFunctionControl` (`0x03 / 0x2A`) command byte for initiating automated landing (`AutoLanding`). */
+    const val FLYC_FUNCTION_CONTROL_AUTO_LAND: Int = 0x02
+
+    /**
+     * Bitmask in byte `12` (`0x0C`) of `DataRcGetPushParams` (`0x06 / 0x05`) for the physical
+     * front `Fn` button (`Custom1` `0x10`), excluding the right-shoulder `C` button (`Custom2` `0x08`).
+     */
+    const val RC_BUTTON_MASK_FUNCTION: Int = 0x10
+
     /** DUML command types. */
     const val COMMAND_TYPE_REQUEST_WITH_ACK: Int = 0x40
     const val COMMAND_TYPE_RESPONSE_ACK: Int = 0x80
@@ -248,6 +260,31 @@ object DumlProtocol {
     }
 
     /**
+     * Builds a raw DUML v1 Flight Controller Function Control (`0x03 / 0x2A`) packet
+     * requesting `AutoLanding` (`0x02`).
+     */
+    fun buildAutoLandDumlFrame(sequenceNumber: Int): ByteArray {
+        return buildDumlFrame(
+            sourceModuleId = MODULE_MOBILE_APP,
+            destinationModuleId = MODULE_FLIGHT_CONTROLLER,
+            sequenceNumber = sequenceNumber,
+            commandType = COMMAND_TYPE_REQUEST_WITH_ACK,
+            commandSet = MODULE_FLIGHT_CONTROLLER,
+            commandId = CMD_FLIGHT_CONTROLLER_FUNCTION_CONTROL,
+            payload = byteArrayOf(FLYC_FUNCTION_CONTROL_AUTO_LAND.toByte()),
+        )
+    }
+
+    /**
+     * Builds a DUML v1 Flight Controller Function Control (`0x03 / 0x2A`) `AutoLanding`
+     * command wrapped inside DJI's 8-byte AOA multiplex header.
+     */
+    fun buildAutoLandCommand(sequenceNumber: Int): ByteArray {
+        val dumlFrame = buildAutoLandDumlFrame(sequenceNumber)
+        return wrapInAoaEnvelope(dumlFrame, AOA_CHANNEL_DUML)
+    }
+
+    /**
      * Returns a human-readable module name for a DUML module ID byte (`bits 0..4` = device type, `bits 5..7` = sub-index).
      */
     fun formatModuleName(moduleId: Int): String {
@@ -375,7 +412,7 @@ object DumlProtocol {
         val pitchDegrees = byteBuffer.getShort(24) * 0.1f
         val rollDegrees = byteBuffer.getShort(26) * 0.1f
         val yawDegrees = byteBuffer.getShort(28) * 0.1f
-        val modeByte = payload[30].toInt() and 0xFF
+        val modeByte = payload[30].toInt() and 0x7F
         val controllerStateFlags = byteBuffer.getInt(32)
         val gpsSatellites = payload[36].toInt() and 0xFF
         val batteryPercentage = payload[40].toInt() and 0xFF
@@ -410,7 +447,7 @@ object DumlProtocol {
             8 -> "GPS-HL"
             9 -> "GPS-HOTPOINT"
             10, 11 -> "AUTO-TAKEOFF"
-            12, 33 -> "AUTO-LAND"
+            12 -> "AUTO-LAND"
             13 -> "ATTI-LAND"
             14 -> "WAYPOINT"
             15 -> "RTH"
@@ -426,6 +463,7 @@ object DumlProtocol {
             30 -> "FPV"
             31 -> "SPORT"
             32 -> "NOVICE"
+            33 -> "FORCE-LAND"
             35 -> "TERRAIN-FOLLOW"
             36 -> "PALM-CONTROL"
             37 -> "QUICK-SHOT"
@@ -701,12 +739,16 @@ object DumlProtocol {
             return null
         }
 
+        val isFunctionButtonPressed = payload.size >= 13 &&
+            (payload[12].toInt() and RC_BUTTON_MASK_FUNCTION) != 0
+
         return RemoteControllerAxes(
             rightStickHorizontal = rightStickHorizontal,
             rightStickVertical = rightStickVertical,
             leftStickVertical = leftStickVertical,
             leftStickHorizontal = leftStickHorizontal,
             gimbalWheel = gimbalWheel,
+            isFunctionButtonPressed = isFunctionButtonPressed,
         )
     }
 
@@ -862,7 +904,7 @@ data class FlightControllerTelemetry(
 )
 
 /**
- * Remote Controller physical stick and gimbal wheel positions (`0x06/0x05`).
+ * Remote Controller physical stick, gimbal wheel, and function button states (`0x06/0x05`).
  */
 data class RemoteControllerAxes(
     val rightStickHorizontal: Int,
@@ -870,6 +912,7 @@ data class RemoteControllerAxes(
     val leftStickVertical: Int,
     val leftStickHorizontal: Int,
     val gimbalWheel: Int,
+    val isFunctionButtonPressed: Boolean = false,
 )
 
 /**

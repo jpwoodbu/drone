@@ -146,6 +146,12 @@ class UsbAccessoryConnectionManager(
     @Volatile
     private var batteryPollingJob: Job? = null
 
+    @Volatile
+    private var functionButtonAutoLandJob: Job? = null
+
+    @Volatile
+    private var functionButtonAutoLandTriggeredForCurrentHold: Boolean = false
+
     private val usbBroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
@@ -400,6 +406,10 @@ class UsbAccessoryConnectionManager(
         val decodedGimbal = DumlProtocol.decodeGimbalTelemetry(frame)
         val decodedVersion = DumlProtocol.decodeDeviceVersionString(frame)
 
+        if (decodedAxes != null) {
+            handleFunctionButtonState(decodedAxes.isFunctionButtonPressed)
+        }
+
         _connectionState.update { currentState ->
             val updatedModules = currentState.observedModules + sourceLabel
             val updatedVersions = if (decodedVersion != null) {
@@ -453,6 +463,33 @@ class UsbAccessoryConnectionManager(
     }
 
     @Synchronized
+    private fun handleFunctionButtonState(isPressed: Boolean) {
+        if (!isPressed) {
+            functionButtonAutoLandJob?.cancel()
+            functionButtonAutoLandJob = null
+            functionButtonAutoLandTriggeredForCurrentHold = false
+            return
+        }
+        if (functionButtonAutoLandTriggeredForCurrentHold || functionButtonAutoLandJob != null) {
+            return
+        }
+        functionButtonAutoLandJob = managerScope.launch {
+            delay(FUNCTION_BUTTON_AUTO_LAND_HOLD_MILLIS)
+            val telemetry = _connectionState.value.flightControllerTelemetry
+            if (telemetry?.aircraftInAir == true &&
+                telemetry.flightMode != "AUTO-TAKEOFF" &&
+                !telemetry.isAutoLanding
+            ) {
+                functionButtonAutoLandTriggeredForCurrentHold = true
+                val autoLandCommand = DumlProtocol.buildAutoLandCommand(
+                    sequenceNumber = sequenceCounter.getAndIncrement() and 0xFFFF,
+                )
+                writeBytesToAccessory(autoLandCommand)
+            }
+        }
+    }
+
+    @Synchronized
     private fun writeBytesToAccessory(bytes: ByteArray) {
         val outputStream = activeOutputStream ?: return
         try {
@@ -483,6 +520,9 @@ class UsbAccessoryConnectionManager(
         readerJob = null
         batteryPollingJob?.cancel()
         batteryPollingJob = null
+        functionButtonAutoLandJob?.cancel()
+        functionButtonAutoLandJob = null
+        functionButtonAutoLandTriggeredForCurrentHold = false
         activeOutputStream = null
         val descriptorToClose = activeFileDescriptor
         activeFileDescriptor = null
@@ -561,5 +601,6 @@ class UsbAccessoryConnectionManager(
 
     companion object {
         private const val ACTION_USB_PERMISSION = "one.woodbury.drone.bridge.USB_PERMISSION"
+        private const val FUNCTION_BUTTON_AUTO_LAND_HOLD_MILLIS: Long = 2_000L
     }
 }

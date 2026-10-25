@@ -179,17 +179,27 @@ class DumlProtocolTest {
         assertEquals("AUTO-TAKEOFF", takeoff!!.flightMode)
         assertFalse(takeoff.isAutoLanding)
 
-        // Mode 12 is AutoLanding
+        // Mode 12 is AutoLanding, including when bit 7 (0x80 = isVisionUsed) is set.
         val land = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(12))
         assertNotNull(land)
         assertEquals("AUTO-LAND", land!!.flightMode)
         assertTrue(land.isAutoLanding)
 
-        // Mode 33 is ConfirmLanding (stick-confirmed auto-landing)
-        val confirmLand = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(33))
-        assertNotNull(confirmLand)
-        assertEquals("AUTO-LAND", confirmLand!!.flightMode)
-        assertTrue(confirmLand.isAutoLanding)
+        val landWithVision = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(12 or 0x80))
+        assertNotNull(landWithVision)
+        assertEquals("AUTO-LAND", landWithVision!!.flightMode)
+        assertTrue(landWithVision.isAutoLanding)
+
+        // Mode 33 is ForceLanding (stick-confirmed final descent), including with bit 7 (0x80) set.
+        val forceLand = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(33))
+        assertNotNull(forceLand)
+        assertEquals("FORCE-LAND", forceLand!!.flightMode)
+        assertTrue(forceLand.isAutoLanding)
+
+        val forceLandWithVision = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(33 or 0x80))
+        assertNotNull(forceLandWithVision)
+        assertEquals("FORCE-LAND", forceLandWithVision!!.flightMode)
+        assertTrue(forceLandWithVision.isAutoLanding)
 
         // Mode 15 is GoHome / RTH
         val rth = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(15))
@@ -237,6 +247,23 @@ class DumlProtocolTest {
         assertEquals(1024, decoded.leftStickVertical)
         assertEquals(950, decoded.leftStickHorizontal)
         assertEquals(1024, decoded.gimbalWheel)
+        assertFalse(decoded.isFunctionButtonPressed)
+
+        val extendedPayload = ByteArray(14)
+        payload.copyInto(extendedPayload)
+        extendedPayload[12] = 0x10 // Custom1 / front Fn button bit
+        val fnPressedDecoded = DumlProtocol.decodeRemoteControllerAxes(
+            frame.copy(payload = extendedPayload),
+        )
+        assertNotNull(fnPressedDecoded)
+        assertTrue(fnPressedDecoded!!.isFunctionButtonPressed)
+
+        extendedPayload[12] = 0x08 // Custom2 / right-shoulder C button bit
+        val cButtonPressedDecoded = DumlProtocol.decodeRemoteControllerAxes(
+            frame.copy(payload = extendedPayload),
+        )
+        assertNotNull(cButtonPressedDecoded)
+        assertFalse(cButtonPressedDecoded!!.isFunctionButtonPressed)
     }
 
     @Test
@@ -645,5 +672,41 @@ class DumlProtocolTest {
             prefixLength = 24,
         )
         assertEquals("192.168.1.255", broadcast24)
+    }
+
+    @Test
+    fun buildAutoLandCommand_encodesExpectedFlightControllerFunctionControlFrame() {
+        val rawFrame = DumlProtocol.buildAutoLandDumlFrame(sequenceNumber = 0x0405)
+        val outcome = DumlProtocol.tryParseDumlFrame(
+            buffer = rawFrame,
+            offset = 0,
+            availableLength = rawFrame.size,
+        )
+        assertTrue(outcome is DumlParseOutcome.Parsed)
+        val parsed = (outcome as DumlParseOutcome.Parsed).frame
+        assertEquals(DumlProtocol.MODULE_MOBILE_APP, parsed.sourceModuleId)
+        assertEquals(DumlProtocol.MODULE_FLIGHT_CONTROLLER, parsed.destinationModuleId)
+        assertEquals(0x0405, parsed.sequenceNumber)
+        assertEquals(DumlProtocol.COMMAND_TYPE_REQUEST_WITH_ACK, parsed.commandType)
+        assertEquals(DumlProtocol.MODULE_FLIGHT_CONTROLLER, parsed.commandSet)
+        assertEquals(DumlProtocol.CMD_FLIGHT_CONTROLLER_FUNCTION_CONTROL, parsed.commandId)
+        assertArrayEquals(
+            byteArrayOf(DumlProtocol.FLYC_FUNCTION_CONTROL_AUTO_LAND.toByte()),
+            parsed.payload,
+        )
+
+        val aoaCommand = DumlProtocol.buildAutoLandCommand(sequenceNumber = 0x0405)
+        val parsedFrames = mutableListOf<DumlFrame>()
+        val parser = AoaStreamParser(
+            onDumlFrame = { parsedFrames.add(it) },
+            onVideoChunk = {},
+        )
+        parser.feedBytes(aoaCommand, aoaCommand.size)
+        assertEquals(1, parsedFrames.size)
+        assertEquals(DumlProtocol.CMD_FLIGHT_CONTROLLER_FUNCTION_CONTROL, parsedFrames[0].commandId)
+        assertArrayEquals(
+            byteArrayOf(DumlProtocol.FLYC_FUNCTION_CONTROL_AUTO_LAND.toByte()),
+            parsedFrames[0].payload,
+        )
     }
 }

@@ -48,3 +48,22 @@ control transfer handshake. Because these values are static placeholders rather
 than authentic hardware or firmware identifiers, they are omitted from the
 `:bridge` diagnostic user interface. Genuine module firmware versions are
 instead parsed dynamically from inbound DUML version push packets and queries.
+
+## Read-Only Security Posture of `:mirror` Over Wi-Fi
+
+The `:mirror` application is intentionally kept strictly read-only with respect
+to aircraft and remote controller state:
+
+- `:mirror` only transmits 4-byte `"DJIH"` UDP discovery heartbeats to register
+  as a video and telemetry subscriber with `:bridge`, and `:bridge` never
+  accepts or forwards upstream DUML commands received over the UDP network
+  socket.
+- Keeping the Wi-Fi link unidirectional for DUML traffic avoids exposing any
+  drone flight controls over Wi-Fi, eliminating the risk of unauthorized
+  network peers or accidental UI interactions in the headset injecting flight
+  commands into the aircraft.
+- Any software-assisted flight control actions (such as initiating `Auto-Land`
+  via a 2-second hold of the physical `Fn` button) are detected and executed
+  exclusively inside `:bridge` over the direct physical USB connection to the
+  remote controller, while `:mirror` passively renders the resulting state and
+  telemetry updates.

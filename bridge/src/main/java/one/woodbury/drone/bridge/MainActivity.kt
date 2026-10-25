@@ -540,6 +540,10 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                     label = "Gimbal Wheel",
                     value = axes.gimbalWheel.toString(),
                 )
+                KeyValueItem(
+                    label = "Fn Button",
+                    value = if (axes.isFunctionButtonPressed) "Pressed" else "Released",
+                )
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             }
 

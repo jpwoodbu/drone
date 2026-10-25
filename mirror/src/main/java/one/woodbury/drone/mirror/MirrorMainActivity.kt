@@ -656,8 +656,10 @@ private fun BottomStatusBar(
     val metrics = state.videoDecoderMetrics
     val fpsText = if (metrics.framesPerSecond > 0f) "%.1f fps".format(metrics.framesPerSecond) else "— fps"
     val mbpsText = if (metrics.bitrateKbps > 0L) "%.2f Mbps".format(metrics.bitrateKbps / 1000.0) else "— Mbps"
-    val flightMode = state.flightControllerTelemetry?.flightMode ?: "—"
-    val isMotorsRunning = state.flightControllerTelemetry?.motorsRunning == true
+    val telemetry = state.flightControllerTelemetry
+    val flightMode = telemetry?.flightMode ?: "—"
+    val isMotorsRunning = telemetry?.motorsRunning == true
+    val isFunctionButtonPressed = state.remoteControllerAxes?.isFunctionButtonPressed == true
 
     val totalPackets = state.udpPacketsReceived + state.udpSequenceDrops
     val dropRate = if (totalPackets > 0L) {
@@ -710,7 +712,7 @@ private fun BottomStatusBar(
                     )
                 }
                 Text(
-                    text = "VIDEO: ${metrics.videoWidth}×${metrics.videoHeight} (${metrics.framesDecoded} frames, ${metrics.keyframesReceived} IDR) · $mbpsText · $fpsText",
+                    text = "VIDEO: ${metrics.videoWidth}×${metrics.videoHeight} · $mbpsText · $fpsText",
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     color = Color.White.copy(alpha = 0.85f),
@@ -723,6 +725,21 @@ private fun BottomStatusBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (isFunctionButtonPressed) {
+                    ComposeSurface(
+                        color = Color(0xFFD29922).copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(4.dp),
+                    ) {
+                        Text(
+                            text = "Fn",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFD29922),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
+                }
                 if (isMotorsRunning) {
                     ComposeSurface(
                         color = Color(0xFF3FB950).copy(alpha = 0.2f),
