@@ -24,3 +24,8 @@
 - In the `:mirror` application UI, refer to the upper telemetry bar as the
   "top status bar" and the lower diagnostics bar as the "bottom status bar".
 
+## DUML Protocol Documentation
+
+- Refer to the local reverse-engineered DUML v1 reference documentation in
+  `docs/duml/` before researching online or implementing DUML packets.
+
