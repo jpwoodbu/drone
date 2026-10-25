@@ -310,6 +310,7 @@ fun MirrorCockpitScreen(
             onOpenNetworkDiagnostics = { showNetworkDialog = true },
             onOpenSettings = { showSettingsDialog = true },
             onOpenFlightModes = { showFlightModesDialog = true },
+            onToggleUnitSystem = toggleUnitSystem,
         )
     }
 }
@@ -650,6 +651,7 @@ private fun BottomStatusBar(
     onOpenNetworkDiagnostics: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenFlightModes: () -> Unit,
+    onToggleUnitSystem: () -> Unit,
 ) {
     val metrics = state.videoDecoderMetrics
     val fpsText = if (metrics.framesPerSecond > 0f) "%.1f fps".format(metrics.framesPerSecond) else "— fps"
@@ -735,6 +737,22 @@ private fun BottomStatusBar(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         )
                     }
+                }
+                ComposeSurface(
+                    color = Color(0xFF21262D),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable(onClick = onToggleUnitSystem),
+                ) {
+                    Text(
+                        text = if (state.unitSystem.isImperial) "IMPERIAL" else "METRIC",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF58A6FF),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
                 }
                 ComposeSurface(
                     color = Color(0xFF21262D),

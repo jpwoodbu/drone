@@ -258,11 +258,8 @@ fun HudOverlay(
     }
 
     val pitchText = if (telemetry != null) "%.0f°".format(telemetry.pitchDegrees) else "—"
+    val rollText = if (telemetry != null) "%.0f°".format(telemetry.rollDegrees) else "—"
     val gimbalText = state.gimbalTelemetry?.let { "%.0f°".format(it.pitchDegrees) } ?: "—"
-    val unitModeText = when (state.unitSystem) {
-        UnitSystem.METRIC -> "METRIC"
-        UnitSystem.IMPERIAL -> "IMPERIAL"
-    }
 
     Box(
         modifier = modifier.fillMaxSize(),
@@ -384,7 +381,7 @@ fun HudOverlay(
                 )
             }
 
-            // Bottom-Right: Distance to Home, Pitch, and Unit System Mode.
+            // Bottom-Right: Distance to Home, Pitch, and Roll.
             Column(
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -403,22 +400,12 @@ fun HudOverlay(
                     hudColor = hudColor,
                     boxBackgroundColor = boxBackgroundColor,
                 )
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(boxBackgroundColor)
-                        .border(1.dp, hudColor.copy(alpha = hudColor.alpha * 0.6f), RoundedCornerShape(2.dp))
-                        .clickable(onClick = onToggleUnitSystem)
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                ) {
-                    Text(
-                        text = unitModeText,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        color = hudColor,
-                    )
-                }
+                HudDataRow(
+                    label = "ROLL",
+                    value = rollText,
+                    hudColor = hudColor,
+                    boxBackgroundColor = boxBackgroundColor,
+                )
             }
         }
     }
@@ -723,6 +710,24 @@ private fun SpeedTape(
             }
         }
 
+        // Speed unit on the outer edge.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = 4.dp, top = 4.dp)
+                .background(boxBackgroundColor, RoundedCornerShape(2.dp))
+                .border(1.dp, hudColor.copy(alpha = 0.6f), RoundedCornerShape(2.dp))
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+        ) {
+            Text(
+                text = if (unitSystem.isImperial) "MPH" else "M/S",
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                color = hudColor,
+            )
+        }
+
         // Fixed center digital speed box.
         Box(
             contentAlignment = Alignment.CenterEnd,
@@ -848,6 +853,24 @@ private fun AltitudeTape(
                 }
                 tick += minorStep
             }
+        }
+
+        // Altitude unit on the outer edge.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(end = 4.dp, top = 4.dp)
+                .background(boxBackgroundColor, RoundedCornerShape(2.dp))
+                .border(1.dp, hudColor.copy(alpha = 0.6f), RoundedCornerShape(2.dp))
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+        ) {
+            Text(
+                text = if (unitSystem.isImperial) "FT" else "M",
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                color = hudColor,
+            )
         }
 
         // Fixed center digital altitude box.
