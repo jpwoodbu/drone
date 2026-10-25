@@ -51,6 +51,8 @@ data class MirrorReceiverState(
     val batteryTelemetry: BatteryTelemetry? = null,
     val gimbalTelemetry: GimbalTelemetry? = null,
     val unitSystem: UnitSystem = UnitSystem.METRIC,
+    val isHudEnabled: Boolean = false,
+    val hudOpacity: Float = 0.85f,
     val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
     val homeLatitudeDegrees: Double? = null,
     val homeLongitudeDegrees: Double? = null,
@@ -94,6 +96,14 @@ class UdpBridgeReceiver(
     }
 
     @Volatile
+    private var currentHudEnabled: Boolean =
+        sharedPreferences.getBoolean(_preferenceHudEnabled, false)
+
+    @Volatile
+    private var currentHudOpacity: Float =
+        sharedPreferences.getFloat(_preferenceHudOpacity, 0.85f).coerceIn(0.2f, 1.0f)
+
+    @Volatile
     private var socketStatusText: String = "Not started"
 
     @Volatile
@@ -103,6 +113,8 @@ class UdpBridgeReceiver(
         MirrorReceiverState(
             configuredPhoneIp = manualPhoneIp,
             unitSystem = currentUnitSystem,
+            isHudEnabled = currentHudEnabled,
+            hudOpacity = currentHudOpacity,
         ),
     )
     val receiverState: StateFlow<MirrorReceiverState> = _receiverState.asStateFlow()
@@ -172,6 +184,33 @@ class UdpBridgeReceiver(
             .apply()
         _receiverState.update { currentState ->
             currentState.copy(unitSystem = unitSystem)
+        }
+    }
+
+    /**
+     * Updates and persists whether the aircraft HUD overlay is enabled.
+     */
+    fun setHudEnabled(enabled: Boolean) {
+        currentHudEnabled = enabled
+        sharedPreferences.edit()
+            .putBoolean(_preferenceHudEnabled, enabled)
+            .apply()
+        _receiverState.update { currentState ->
+            currentState.copy(isHudEnabled = enabled)
+        }
+    }
+
+    /**
+     * Updates and persists the opacity of the aircraft HUD overlay.
+     */
+    fun setHudOpacity(opacity: Float) {
+        val clamped = opacity.coerceIn(0.2f, 1.0f)
+        currentHudOpacity = clamped
+        sharedPreferences.edit()
+            .putFloat(_preferenceHudOpacity, clamped)
+            .apply()
+        _receiverState.update { currentState ->
+            currentState.copy(hudOpacity = clamped)
         }
     }
 
@@ -580,5 +619,7 @@ class UdpBridgeReceiver(
         private const val _preferencePhoneBridgeIp = "preference_phone_bridge_ip"
         private const val _preferenceUnitSystem = "preference_unit_system"
         private const val _preferenceAltitudeUnit = "preference_altitude_unit"
+        private const val _preferenceHudEnabled = "preference_hud_enabled"
+        private const val _preferenceHudOpacity = "preference_hud_opacity"
     }
 }

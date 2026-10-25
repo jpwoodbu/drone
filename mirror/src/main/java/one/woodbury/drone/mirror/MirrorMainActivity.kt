@@ -19,9 +19,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
@@ -32,7 +34,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface as ComposeSurface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
@@ -57,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import one.woodbury.drone.flight.FlightDynamicsCalculator
 import one.woodbury.drone.video.H264VideoDecoder
+import kotlin.math.roundToInt
 
 /**
  * Landscape 2D viewer activity for the Meta Quest 2 (`one.woodbury.drone.mirror`).
@@ -87,6 +92,8 @@ class MirrorMainActivity : ComponentActivity() {
                         videoDecoder = bridgeReceiver.videoDecoder,
                         onSetPhoneBridgeIp = { ip -> bridgeReceiver.setConfiguredPhoneIp(ip) },
                         onSetUnitSystem = { unitSystem -> bridgeReceiver.setUnitSystem(unitSystem) },
+                        onSetHudEnabled = { enabled -> bridgeReceiver.setHudEnabled(enabled) },
+                        onSetHudOpacity = { opacity -> bridgeReceiver.setHudOpacity(opacity) },
                         modifier = Modifier.padding(innerPadding),
                     )
                 }
@@ -106,6 +113,8 @@ fun MirrorCockpitScreen(
     videoDecoder: H264VideoDecoder?,
     onSetPhoneBridgeIp: (String) -> Unit,
     onSetUnitSystem: (UnitSystem) -> Unit,
+    onSetHudEnabled: (Boolean) -> Unit,
+    onSetHudOpacity: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -113,10 +122,21 @@ fun MirrorCockpitScreen(
     var showNetworkDialog by remember { mutableStateOf(false) }
     var showFlightModesDialog by remember { mutableStateOf(false) }
 
+    val toggleUnitSystem = {
+        val nextSystem = if (state.unitSystem == UnitSystem.METRIC) {
+            UnitSystem.IMPERIAL
+        } else {
+            UnitSystem.METRIC
+        }
+        onSetUnitSystem(nextSystem)
+    }
+
     if (showSettingsDialog) {
         MirrorSettingsDialog(
             configuredIp = state.configuredPhoneIp,
             unitSystem = state.unitSystem,
+            isHudEnabled = state.isHudEnabled,
+            hudOpacity = state.hudOpacity,
             onApplyPhoneIp = { ipAddress ->
                 onSetPhoneBridgeIp(ipAddress)
                 showSettingsDialog = false
@@ -124,6 +144,8 @@ fun MirrorCockpitScreen(
             onSelectUnitSystem = { unitSystem ->
                 onSetUnitSystem(unitSystem)
             },
+            onSetHudEnabled = onSetHudEnabled,
+            onSetHudOpacity = onSetHudOpacity,
             onDismiss = { showSettingsDialog = false },
         )
     }
@@ -160,18 +182,13 @@ fun MirrorCockpitScreen(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        TopStatusBar(
-            state = state,
-            onOpenBatteryHealth = { showBatteryDialog = true },
-            onToggleUnitSystem = {
-                val nextSystem = if (state.unitSystem == UnitSystem.METRIC) {
-                    UnitSystem.IMPERIAL
-                } else {
-                    UnitSystem.METRIC
-                }
-                onSetUnitSystem(nextSystem)
-            },
-        )
+        if (!state.isHudEnabled) {
+            TopStatusBar(
+                state = state,
+                onOpenBatteryHealth = { showBatteryDialog = true },
+                onToggleUnitSystem = toggleUnitSystem,
+            )
+        }
 
         Box(
             modifier = Modifier
@@ -277,6 +294,14 @@ fun MirrorCockpitScreen(
                         }
                     }
                 }
+
+                if (state.isHudEnabled) {
+                    HudOverlay(
+                        state = state,
+                        onOpenBatteryHealth = { showBatteryDialog = true },
+                        onToggleUnitSystem = toggleUnitSystem,
+                    )
+                }
             }
         }
 
@@ -293,12 +318,17 @@ fun MirrorCockpitScreen(
 private fun MirrorSettingsDialog(
     configuredIp: String,
     unitSystem: UnitSystem,
+    isHudEnabled: Boolean,
+    hudOpacity: Float,
     onApplyPhoneIp: (String) -> Unit,
     onSelectUnitSystem: (UnitSystem) -> Unit,
+    onSetHudEnabled: (Boolean) -> Unit,
+    onSetHudOpacity: (Float) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var textValue by remember(configuredIp) { mutableStateOf(configuredIp) }
     val focusManager = LocalFocusManager.current
+    val scrollState = rememberScrollState()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -310,7 +340,57 @@ private fun MirrorSettingsDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Text(
+                    text = "Heads-Up Display (HUD)",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Enable HUD Overlay",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Switch(
+                        checked = isHudEnabled,
+                        onCheckedChange = onSetHudEnabled,
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "HUD Opacity",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = "${(hudOpacity * 100f).roundToInt()}%",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Slider(
+                        value = hudOpacity,
+                        onValueChange = onSetHudOpacity,
+                        valueRange = 0.2f..1.0f,
+                        enabled = isHudEnabled,
+                    )
+                }
+
+                HorizontalDivider()
+
                 Text(
                     text = "Flight Measurement Units",
                     style = MaterialTheme.typography.labelLarge,
