@@ -162,7 +162,6 @@ fun MirrorCockpitScreen(
     ) {
         TopTelemetryHudBar(
             state = state,
-            onOpenNetworkDiagnostics = { showNetworkDialog = true },
             onOpenBatteryHealth = { showBatteryDialog = true },
             onToggleAltitudeUnit = {
                 val nextUnit = if (state.altitudeUnit == AltitudeUnit.METERS) {
@@ -283,6 +282,7 @@ fun MirrorCockpitScreen(
 
         BottomDiagnosticsBar(
             state = state,
+            onOpenNetworkDiagnostics = { showNetworkDialog = true },
             onOpenSettings = { showSettingsDialog = true },
             onOpenFlightModes = { showFlightModesDialog = true },
         )
@@ -427,7 +427,6 @@ private fun MirrorSettingsDialog(
 @Composable
 private fun TopTelemetryHudBar(
     state: MirrorReceiverState,
-    onOpenNetworkDiagnostics: () -> Unit,
     onOpenBatteryHealth: () -> Unit,
     onToggleAltitudeUnit: () -> Unit,
 ) {
@@ -446,7 +445,6 @@ private fun TopTelemetryHudBar(
     val activeAlert = when {
         telemetry?.isCompassError == true -> "COMPASS" to Color(0xFFF85149)
         telemetry?.isAutoLanding == true -> "LANDING" to Color(0xFFD29922)
-        telemetry?.motorsRunning == true -> "MOTORS" to Color(0xFF3FB950)
         else -> null
     }
 
@@ -487,19 +485,6 @@ private fun TopTelemetryHudBar(
         "—"
     }
 
-    val totalPackets = state.udpPacketsReceived + state.udpSequenceDrops
-    val dropRate = if (totalPackets > 0L) {
-        (state.udpSequenceDrops.toDouble() / totalPackets.toDouble()) * 100.0
-    } else {
-        0.0
-    }
-    val wifiIconColor = when {
-        state.phoneBridgeIp == null -> Color.White.copy(alpha = 0.4f)
-        state.udpSequenceDrops == 0L || dropRate < 0.5 -> Color(0xFF3FB950)
-        dropRate < 2.0 -> Color(0xFFD29922)
-        else -> Color(0xFFF85149)
-    }
-
     ComposeSurface(
         modifier = Modifier.fillMaxWidth(),
         color = Color(0xFF161B22),
@@ -512,36 +497,19 @@ private fun TopTelemetryHudBar(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                IconButton(
-                    onClick = onOpenNetworkDiagnostics,
-                    modifier = Modifier.size(28.dp),
+            if (activeAlert != null) {
+                ComposeSurface(
+                    color = activeAlert.second.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(4.dp),
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_wifi),
-                        contentDescription = "Bridge Network Diagnostics",
-                        tint = wifiIconColor,
-                        modifier = Modifier.size(20.dp),
+                    Text(
+                        text = activeAlert.first,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = activeAlert.second,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                     )
-                }
-                if (activeAlert != null) {
-                    ComposeSurface(
-                        color = activeAlert.second.copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(4.dp),
-                        modifier = Modifier.padding(start = 2.dp),
-                    ) {
-                        Text(
-                            text = activeAlert.first,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = activeAlert.second,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        )
-                    }
                 }
             }
 
@@ -597,6 +565,7 @@ private fun TopTelemetryHudBar(
 @Composable
 private fun BottomDiagnosticsBar(
     state: MirrorReceiverState,
+    onOpenNetworkDiagnostics: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenFlightModes: () -> Unit,
 ) {
@@ -604,6 +573,20 @@ private fun BottomDiagnosticsBar(
     val fpsText = if (metrics.framesPerSecond > 0f) "%.1f fps".format(metrics.framesPerSecond) else "— fps"
     val mbpsText = if (metrics.bitrateKbps > 0L) "%.2f Mbps".format(metrics.bitrateKbps / 1000.0) else "— Mbps"
     val flightMode = state.flightControllerTelemetry?.flightMode ?: "—"
+    val isMotorsRunning = state.flightControllerTelemetry?.motorsRunning == true
+
+    val totalPackets = state.udpPacketsReceived + state.udpSequenceDrops
+    val dropRate = if (totalPackets > 0L) {
+        (state.udpSequenceDrops.toDouble() / totalPackets.toDouble()) * 100.0
+    } else {
+        0.0
+    }
+    val wifiIconColor = when {
+        state.phoneBridgeIp == null -> Color.White.copy(alpha = 0.4f)
+        state.udpSequenceDrops == 0L || dropRate < 0.5 -> Color(0xFF3FB950)
+        dropRate < 2.0 -> Color(0xFFD29922)
+        else -> Color(0xFFF85149)
+    }
 
     ComposeSurface(
         modifier = Modifier.fillMaxWidth(),
@@ -619,8 +602,19 @@ private fun BottomDiagnosticsBar(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
+                IconButton(
+                    onClick = onOpenNetworkDiagnostics,
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_wifi),
+                        contentDescription = "Bridge Network Diagnostics",
+                        tint = wifiIconColor,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
                 IconButton(
                     onClick = onOpenSettings,
                     modifier = Modifier.size(28.dp),
@@ -638,23 +632,44 @@ private fun BottomDiagnosticsBar(
                     color = Color.White.copy(alpha = 0.85f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 4.dp),
                 )
             }
-            ComposeSurface(
-                color = Color(0xFF21262D),
-                shape = RoundedCornerShape(4.dp),
-                modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .clickable(onClick = onOpenFlightModes),
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    text = "MODE: $flightMode",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF58A6FF),
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                )
+                if (isMotorsRunning) {
+                    ComposeSurface(
+                        color = Color(0xFF3FB950).copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(4.dp),
+                    ) {
+                        Text(
+                            text = "MOTORS",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF3FB950),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+                ComposeSurface(
+                    color = Color(0xFF21262D),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable(onClick = onOpenFlightModes),
+                ) {
+                    Text(
+                        text = "MODE: $flightMode",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF58A6FF),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
             }
         }
     }
