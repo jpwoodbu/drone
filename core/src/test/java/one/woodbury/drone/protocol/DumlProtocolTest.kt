@@ -177,6 +177,7 @@ class DumlProtocolTest {
         val takeoff = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(11))
         assertNotNull(takeoff)
         assertEquals("AUTO-TAKEOFF", takeoff!!.flightMode)
+        assertFalse(takeoff.isAutoLanding)
 
         // Mode 12 is AutoLanding
         val land = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(12))
@@ -184,11 +185,29 @@ class DumlProtocolTest {
         assertEquals("AUTO-LAND", land!!.flightMode)
         assertTrue(land.isAutoLanding)
 
+        // Mode 33 is ConfirmLanding (stick-confirmed auto-landing)
+        val confirmLand = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(33))
+        assertNotNull(confirmLand)
+        assertEquals("AUTO-LAND", confirmLand!!.flightMode)
+        assertTrue(confirmLand.isAutoLanding)
+
         // Mode 15 is GoHome / RTH
         val rth = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(15))
         assertNotNull(rth)
         assertEquals("RTH", rth!!.flightMode)
         assertTrue(rth.isRthActive)
+
+        // Mode 26 is ActiveTrack (not RTH)
+        val activeTrack = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(26))
+        assertNotNull(activeTrack)
+        assertEquals("ACTIVE-TRACK", activeTrack!!.flightMode)
+        assertFalse(activeTrack.isRthActive)
+
+        // Mode 27 is TapFly (not AutoLanding)
+        val tapFly = DumlProtocol.decodeFlightControllerOsdTelemetry(makeOsdFrame(27))
+        assertNotNull(tapFly)
+        assertEquals("TAP-FLY", tapFly!!.flightMode)
+        assertFalse(tapFly.isAutoLanding)
     }
 
     @Test
