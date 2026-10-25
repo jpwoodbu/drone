@@ -14,6 +14,18 @@ class HudCalculatorTest {
     }
 
     @Test
+    fun unwrapTargetHeadingDegrees_maintainsContinuousAngleAcrossNorth() {
+        val step1 = HudCalculator.unwrapTargetHeadingDegrees(350f, 10f)
+        assertEquals(370f, step1, 0.001f)
+
+        val step2 = HudCalculator.unwrapTargetHeadingDegrees(step1, 355f)
+        assertEquals(355f, step2, 0.001f)
+
+        val step3 = HudCalculator.unwrapTargetHeadingDegrees(5f, 350f)
+        assertEquals(-10f, step3, 0.001f)
+    }
+
+    @Test
     fun formatHeadingTickLabel_formatsCardinalsAndTwoDigitNumbers() {
         assertEquals("N", HudCalculator.formatHeadingTickLabel(0))
         assertEquals("N", HudCalculator.formatHeadingTickLabel(360))

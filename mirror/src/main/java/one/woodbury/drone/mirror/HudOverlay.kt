@@ -2,6 +2,9 @@ package one.woodbury.drone.mirror
 
 import android.graphics.Paint
 import android.graphics.Typeface
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,7 +24,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,6 +62,21 @@ object HudCalculator {
         if (delta > 180f) delta -= 360f
         if (delta < -180f) delta += 360f
         return delta
+    }
+
+    /**
+     * Advances a continuous unwrapped heading angle in degrees by the shortest angular delta
+     * (`[-180.0, 180.0]`) to [newHeadingDegrees], preventing `360°` spin-back when animating
+     * across North (`0° / 360°`).
+     */
+    fun unwrapTargetHeadingDegrees(
+        previousUnwrappedDegrees: Float,
+        newHeadingDegrees: Float,
+    ): Float {
+        return previousUnwrappedDegrees + shortestAngularDeltaDegrees(
+            centerDegrees = previousUnwrappedDegrees,
+            targetDegrees = newHeadingDegrees,
+        )
     }
 
     /**
@@ -132,6 +153,12 @@ object HudCalculator {
 private val BaseHudGreen = Color(0xFF00FF66)
 private val BaseHudAlertRed = Color(0xFFF85149)
 private val BaseHudAlertAmber = Color(0xFFD29922)
+
+/**
+ * Duration in milliseconds for interpolating 10 Hz (`100 ms`) aircraft OSD telemetry updates
+ * across native display VSYNC frames.
+ */
+private const val HUD_TAPE_INTERPOLATION_MILLIS = 100
 
 /**
  * Aircraft-style Heads-Up Display (HUD) overlaid on the video viewport.
@@ -469,6 +496,32 @@ private fun HeadingTape(
         }
     }
 
+    var unwrappedTargetHeading by remember { mutableStateOf<Float?>(null) }
+    val currentTargetHeading = if (headingDegrees != null) {
+        val previous = unwrappedTargetHeading
+        val next = if (previous != null) {
+            HudCalculator.unwrapTargetHeadingDegrees(previous, headingDegrees)
+        } else {
+            headingDegrees
+        }
+        if (previous != next) {
+            unwrappedTargetHeading = next
+        }
+        next
+    } else {
+        unwrappedTargetHeading = null
+        0f
+    }
+
+    val animatedUnwrappedHeading by animateFloatAsState(
+        targetValue = currentTargetHeading,
+        animationSpec = tween(
+            durationMillis = HUD_TAPE_INTERPOLATION_MILLIS,
+            easing = LinearEasing,
+        ),
+        label = "headingTapeDegrees",
+    )
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier,
@@ -495,7 +548,11 @@ private fun HeadingTape(
                     strokeWidth = strokeWidthPx,
                 )
 
-                val centerHeading = headingDegrees ?: 0f
+                val centerHeading = if (headingDegrees != null) {
+                    FlightDynamicsCalculator.normalizeCompassHeadingDegrees(animatedUnwrappedHeading)
+                } else {
+                    0f
+                }
                 val pixelsPerDegree = size.width / (halfSpanDegrees * 2f)
                 val baseFive = (centerHeading / 5f).roundToInt() * 5
 
@@ -584,8 +641,18 @@ private fun SpeedTape(
         }
     }
 
-    val displaySpeed = groundSpeedMetersPerSecond?.let {
-        HudCalculator.convertSpeedToDisplayUnits(it, unitSystem)
+    val animatedSpeedMetersPerSecond by animateFloatAsState(
+        targetValue = groundSpeedMetersPerSecond ?: 0f,
+        animationSpec = tween(
+            durationMillis = HUD_TAPE_INTERPOLATION_MILLIS,
+            easing = LinearEasing,
+        ),
+        label = "speedTapeMetersPerSecond",
+    )
+    val displaySpeed = if (groundSpeedMetersPerSecond != null) {
+        HudCalculator.convertSpeedToDisplayUnits(animatedSpeedMetersPerSecond, unitSystem)
+    } else {
+        null
     }
     val readoutText = if (groundSpeedMetersPerSecond != null) {
         HudCalculator.formatSpeedBoxValue(groundSpeedMetersPerSecond, unitSystem)
@@ -702,8 +769,18 @@ private fun AltitudeTape(
         }
     }
 
-    val displayAltitude = altitudeMeters?.let {
-        HudCalculator.convertAltitudeToDisplayUnits(it, unitSystem)
+    val animatedAltitudeMeters by animateFloatAsState(
+        targetValue = altitudeMeters ?: 0f,
+        animationSpec = tween(
+            durationMillis = HUD_TAPE_INTERPOLATION_MILLIS,
+            easing = LinearEasing,
+        ),
+        label = "altitudeTapeMeters",
+    )
+    val displayAltitude = if (altitudeMeters != null) {
+        HudCalculator.convertAltitudeToDisplayUnits(animatedAltitudeMeters, unitSystem)
+    } else {
+        null
     }
     val readoutText = if (altitudeMeters != null) {
         HudCalculator.formatAltitudeBoxValue(altitudeMeters, unitSystem)
