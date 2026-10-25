@@ -9,18 +9,18 @@ class AltitudeFormatterTest {
 
     @Test
     fun formatAltitude_formatsMetersWithOneDecimalPlace() {
-        assertEquals("0.0 m", AltitudeFormatter.formatAltitude(0.0f, AltitudeUnit.METERS))
-        assertEquals("12.5 m", AltitudeFormatter.formatAltitude(12.54f, AltitudeUnit.METERS))
-        assertEquals("121.9 m", AltitudeFormatter.formatAltitude(121.92f, AltitudeUnit.METERS))
-        assertEquals("-1.5 m", AltitudeFormatter.formatAltitude(-1.5f, AltitudeUnit.METERS))
+        assertEquals("0.0 m", AltitudeFormatter.formatAltitude(0.0f, UnitSystem.METRIC))
+        assertEquals("12.5 m", AltitudeFormatter.formatAltitude(12.54f, UnitSystem.METRIC))
+        assertEquals("121.9 m", AltitudeFormatter.formatAltitude(121.92f, UnitSystem.METRIC))
+        assertEquals("-1.5 m", AltitudeFormatter.formatAltitude(-1.5f, UnitSystem.METRIC))
     }
 
     @Test
     fun formatAltitude_formatsFeetAsInteger() {
-        assertEquals("0 ft", AltitudeFormatter.formatAltitude(0.0f, AltitudeUnit.FEET))
-        assertEquals("41 ft", AltitudeFormatter.formatAltitude(12.5f, AltitudeUnit.FEET))
-        assertEquals("400 ft", AltitudeFormatter.formatAltitude(121.92f, AltitudeUnit.FEET))
-        assertEquals("-5 ft", AltitudeFormatter.formatAltitude(-1.5f, AltitudeUnit.FEET))
+        assertEquals("0 ft", AltitudeFormatter.formatAltitude(0.0f, UnitSystem.IMPERIAL))
+        assertEquals("41 ft", AltitudeFormatter.formatAltitude(12.5f, UnitSystem.IMPERIAL))
+        assertEquals("400 ft", AltitudeFormatter.formatAltitude(121.92f, UnitSystem.IMPERIAL))
+        assertEquals("-5 ft", AltitudeFormatter.formatAltitude(-1.5f, UnitSystem.IMPERIAL))
     }
 
     @Test

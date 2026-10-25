@@ -86,7 +86,7 @@ class MirrorMainActivity : ComponentActivity() {
                         state = receiverState,
                         videoDecoder = bridgeReceiver.videoDecoder,
                         onSetPhoneBridgeIp = { ip -> bridgeReceiver.setConfiguredPhoneIp(ip) },
-                        onSetAltitudeUnit = { unit -> bridgeReceiver.setAltitudeUnit(unit) },
+                        onSetUnitSystem = { unitSystem -> bridgeReceiver.setUnitSystem(unitSystem) },
                         modifier = Modifier.padding(innerPadding),
                     )
                 }
@@ -105,7 +105,7 @@ fun MirrorCockpitScreen(
     state: MirrorReceiverState,
     videoDecoder: H264VideoDecoder?,
     onSetPhoneBridgeIp: (String) -> Unit,
-    onSetAltitudeUnit: (AltitudeUnit) -> Unit,
+    onSetUnitSystem: (UnitSystem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -116,13 +116,13 @@ fun MirrorCockpitScreen(
     if (showSettingsDialog) {
         MirrorSettingsDialog(
             configuredIp = state.configuredPhoneIp,
-            altitudeUnit = state.altitudeUnit,
+            unitSystem = state.unitSystem,
             onApplyPhoneIp = { ipAddress ->
                 onSetPhoneBridgeIp(ipAddress)
                 showSettingsDialog = false
             },
-            onSelectAltitudeUnit = { unit ->
-                onSetAltitudeUnit(unit)
+            onSelectUnitSystem = { unitSystem ->
+                onSetUnitSystem(unitSystem)
             },
             onDismiss = { showSettingsDialog = false },
         )
@@ -160,16 +160,16 @@ fun MirrorCockpitScreen(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        TopTelemetryHudBar(
+        TopStatusBar(
             state = state,
             onOpenBatteryHealth = { showBatteryDialog = true },
-            onToggleAltitudeUnit = {
-                val nextUnit = if (state.altitudeUnit == AltitudeUnit.METERS) {
-                    AltitudeUnit.FEET
+            onToggleUnitSystem = {
+                val nextSystem = if (state.unitSystem == UnitSystem.METRIC) {
+                    UnitSystem.IMPERIAL
                 } else {
-                    AltitudeUnit.METERS
+                    UnitSystem.METRIC
                 }
-                onSetAltitudeUnit(nextUnit)
+                onSetUnitSystem(nextSystem)
             },
         )
 
@@ -280,7 +280,7 @@ fun MirrorCockpitScreen(
             }
         }
 
-        BottomDiagnosticsBar(
+        BottomStatusBar(
             state = state,
             onOpenNetworkDiagnostics = { showNetworkDialog = true },
             onOpenSettings = { showSettingsDialog = true },
@@ -292,9 +292,9 @@ fun MirrorCockpitScreen(
 @Composable
 private fun MirrorSettingsDialog(
     configuredIp: String,
-    altitudeUnit: AltitudeUnit,
+    unitSystem: UnitSystem,
     onApplyPhoneIp: (String) -> Unit,
-    onSelectAltitudeUnit: (AltitudeUnit) -> Unit,
+    onSelectUnitSystem: (UnitSystem) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var textValue by remember(configuredIp) { mutableStateOf(configuredIp) }
@@ -312,7 +312,7 @@ private fun MirrorSettingsDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text(
-                    text = "Altitude Display Units",
+                    text = "Flight Measurement Units",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -321,14 +321,14 @@ private fun MirrorSettingsDialog(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     FilterChip(
-                        selected = altitudeUnit == AltitudeUnit.METERS,
-                        onClick = { onSelectAltitudeUnit(AltitudeUnit.METERS) },
-                        label = { Text("Meters (m)") },
+                        selected = unitSystem == UnitSystem.METRIC,
+                        onClick = { onSelectUnitSystem(UnitSystem.METRIC) },
+                        label = { Text("Metric") },
                     )
                     FilterChip(
-                        selected = altitudeUnit == AltitudeUnit.FEET,
-                        onClick = { onSelectAltitudeUnit(AltitudeUnit.FEET) },
-                        label = { Text("Feet (ft)") },
+                        selected = unitSystem == UnitSystem.IMPERIAL,
+                        onClick = { onSelectUnitSystem(UnitSystem.IMPERIAL) },
+                        label = { Text("Imperial") },
                     )
                 }
 
@@ -425,18 +425,18 @@ private fun MirrorSettingsDialog(
 }
 
 @Composable
-private fun TopTelemetryHudBar(
+private fun TopStatusBar(
     state: MirrorReceiverState,
     onOpenBatteryHealth: () -> Unit,
-    onToggleAltitudeUnit: () -> Unit,
+    onToggleUnitSystem: () -> Unit,
 ) {
     val telemetry = state.flightControllerTelemetry
-    val isImperial = state.altitudeUnit == AltitudeUnit.FEET
+    val isImperial = state.unitSystem.isImperial
 
     val hasValidVps = telemetry?.isUltrasonicValid == true && telemetry.ultrasonicHeightMeters != null
     val effectiveAltitude = if (hasValidVps) telemetry!!.ultrasonicHeightMeters!! else telemetry?.relativeAltitudeMeters
     val altitudeText = if (effectiveAltitude != null) {
-        AltitudeFormatter.formatAltitude(effectiveAltitude, state.altitudeUnit)
+        AltitudeFormatter.formatAltitude(effectiveAltitude, state.unitSystem)
     } else {
         "—"
     }
@@ -526,15 +526,17 @@ private fun TopTelemetryHudBar(
                 label = "ALTITUDE",
                 value = altitudeText,
                 valueColor = if (isAltitudeWarning) Color(0xFFF85149) else null,
-                onClick = onToggleAltitudeUnit,
+                onClick = onToggleUnitSystem,
             )
             HudMetricItem(
                 label = "SPEED (H/V)",
                 value = speedText,
+                onClick = onToggleUnitSystem,
             )
             HudMetricItem(
                 label = "DISTANCE",
                 value = distanceText,
+                onClick = onToggleUnitSystem,
             )
             HudMetricItem(
                 label = "GPS SATS",
@@ -563,7 +565,7 @@ private fun TopTelemetryHudBar(
 }
 
 @Composable
-private fun BottomDiagnosticsBar(
+private fun BottomStatusBar(
     state: MirrorReceiverState,
     onOpenNetworkDiagnostics: () -> Unit,
     onOpenSettings: () -> Unit,

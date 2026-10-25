@@ -18,3 +18,9 @@
   (such as Meta Quest), the app itself does not use VR or immersive SDKs and
   runs as a regular 2D window that can execute across any compatible Android
   device.
+
+## Mirror Application Status Bars Terminology
+
+- In the `:mirror` application UI, refer to the upper telemetry bar as the
+  "top status bar" and the lower diagnostics bar as the "bottom status bar".
+

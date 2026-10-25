@@ -50,7 +50,7 @@ data class MirrorReceiverState(
     val flightControllerTelemetry: FlightControllerTelemetry? = null,
     val batteryTelemetry: BatteryTelemetry? = null,
     val gimbalTelemetry: GimbalTelemetry? = null,
-    val altitudeUnit: AltitudeUnit = AltitudeUnit.METERS,
+    val unitSystem: UnitSystem = UnitSystem.METRIC,
     val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
     val homeLatitudeDegrees: Double? = null,
     val homeLongitudeDegrees: Double? = null,
@@ -79,12 +79,17 @@ class UdpBridgeReceiver(
         sharedPreferences.getString(_preferencePhoneBridgeIp, "")?.trim().orEmpty()
 
     @Volatile
-    private var currentAltitudeUnit: AltitudeUnit = run {
-        val saved = sharedPreferences.getString(_preferenceAltitudeUnit, AltitudeUnit.METERS.name)
-        try {
-            AltitudeUnit.valueOf(saved ?: AltitudeUnit.METERS.name)
-        } catch (_: IllegalArgumentException) {
-            AltitudeUnit.METERS
+    private var currentUnitSystem: UnitSystem = run {
+        val saved = sharedPreferences.getString(_preferenceUnitSystem, null)
+        if (saved != null) {
+            try {
+                UnitSystem.valueOf(saved)
+            } catch (_: IllegalArgumentException) {
+                UnitSystem.METRIC
+            }
+        } else {
+            val legacy = sharedPreferences.getString(_preferenceAltitudeUnit, null)
+            if (legacy == "FEET") UnitSystem.IMPERIAL else UnitSystem.METRIC
         }
     }
 
@@ -97,7 +102,7 @@ class UdpBridgeReceiver(
     private val _receiverState = MutableStateFlow(
         MirrorReceiverState(
             configuredPhoneIp = manualPhoneIp,
-            altitudeUnit = currentAltitudeUnit,
+            unitSystem = currentUnitSystem,
         ),
     )
     val receiverState: StateFlow<MirrorReceiverState> = _receiverState.asStateFlow()
@@ -158,15 +163,15 @@ class UdpBridgeReceiver(
     }
 
     /**
-     * Updates and persists the display measurement unit for altitude.
+     * Updates and persists the display measurement unit system for flight telemetry.
      */
-    fun setAltitudeUnit(unit: AltitudeUnit) {
-        currentAltitudeUnit = unit
+    fun setUnitSystem(unitSystem: UnitSystem) {
+        currentUnitSystem = unitSystem
         sharedPreferences.edit()
-            .putString(_preferenceAltitudeUnit, unit.name)
+            .putString(_preferenceUnitSystem, unitSystem.name)
             .apply()
         _receiverState.update { currentState ->
-            currentState.copy(altitudeUnit = unit)
+            currentState.copy(unitSystem = unitSystem)
         }
     }
 
@@ -573,6 +578,7 @@ class UdpBridgeReceiver(
         private const val CONNECTION_INACTIVITY_TIMEOUT_MILLIS: Long = 2_500L
         private const val _preferencesFileName = "one.woodbury.drone.mirror.preferences"
         private const val _preferencePhoneBridgeIp = "preference_phone_bridge_ip"
+        private const val _preferenceUnitSystem = "preference_unit_system"
         private const val _preferenceAltitudeUnit = "preference_altitude_unit"
     }
 }
