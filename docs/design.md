@@ -59,11 +59,32 @@ to aircraft and remote controller state:
   accepts or forwards upstream DUML commands received over the UDP network
   socket.
 - Keeping the Wi-Fi link unidirectional for DUML traffic avoids exposing any
-  drone flight controls over Wi-Fi, eliminating the risk of unauthorized
-  network peers or accidental UI interactions in the headset injecting flight
-  commands into the aircraft.
+  drone flight controls over Wi-Fi, eliminating the risk of unauthorized network
+  peers or accidental UI interactions in the headset injecting flight commands
+  into the aircraft.
 - Any software-assisted flight control actions (such as initiating `Auto-Land`
   via a 2-second hold of the physical `Fn` button) are detected and executed
   exclusively inside `:bridge` over the direct physical USB connection to the
   remote controller, while `:mirror` passively renders the resulting state and
   telemetry updates.
+
+## C-button Functionality
+
+While it's non-trivial to run the DJI GO 4 application these days on modern
+Android, research has suggested that the customizable button (c-button) on the
+right shoulder of the physical remote control for the Mavic Air could be
+configured to perform these kinds of tasks:
+
+- Camera related features, including overlay grid
+- Telemetry displays, e.g. map stuff, route history, battery
+- Turning off the front drone LEDs for night photos
+
+Regarding turning off the front LEDs, the Mavic Air appears to do this
+automatically and temporarily when either video recording is in-progress or a
+photo is being taken.
+
+Since there are no plans to incorporate maps into this project, and since all
+the other telemetry is already being displayed or is otherwise easily available,
+and since turning off the front LEDs doesn't seem to provide much utility, the
+c-button is currently set up to always toggle a "rule of thirds" photography
+grid.
