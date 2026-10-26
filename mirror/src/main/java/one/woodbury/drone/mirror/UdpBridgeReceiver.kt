@@ -78,6 +78,10 @@ class UdpBridgeReceiver(
     private val isRunning = AtomicBoolean(false)
     private val heartbeatsSentCounter = AtomicLong(0L)
     private val lastPacketReceivedTimestampMillis = AtomicLong(0L)
+    private val udpPacketsReceivedCounter = AtomicLong(0L)
+    private val udpBytesReceivedCounter = AtomicLong(0L)
+    private val udpSequenceDropsCounter = AtomicLong(0L)
+    private val dumlFramesReceivedCounter = AtomicLong(0L)
 
     @Volatile
     private var manualPhoneIp: String =
@@ -125,9 +129,16 @@ class UdpBridgeReceiver(
     )
     val receiverState: StateFlow<MirrorReceiverState> = _receiverState.asStateFlow()
 
+    @Volatile
+    private var latestVideoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics()
+
     val videoDecoder: H264VideoDecoder = H264VideoDecoder { metrics ->
-        _receiverState.update { currentState ->
-            currentState.copy(videoDecoderMetrics = metrics)
+        val previousFramesDecoded = latestVideoDecoderMetrics.framesDecoded
+        latestVideoDecoderMetrics = metrics
+        if (previousFramesDecoded == 0L && metrics.framesDecoded > 0L) {
+            _receiverState.update { currentState ->
+                currentState.copy(videoDecoderMetrics = metrics)
+            }
         }
     }
 
@@ -396,6 +407,11 @@ class UdpBridgeReceiver(
     }
 
     private fun runReceiveLoop(socket: DatagramSocket) {
+        try {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY)
+        } catch (_: Exception) {
+            // Fallback to default thread priority.
+        }
         val receiveBuffer = ByteArray(2048)
         val datagramPacket = DatagramPacket(receiveBuffer, receiveBuffer.size)
         var lastSequenceNumber: Long? = null
@@ -449,19 +465,15 @@ class UdpBridgeReceiver(
                 }
                 lastSequenceNumber = dataPacket.sequenceNumber
 
+                udpPacketsReceivedCounter.incrementAndGet()
+                udpBytesReceivedCounter.addAndGet(length.toLong())
+                if (sequenceDrops > 0L) {
+                    udpSequenceDropsCounter.addAndGet(sequenceDrops)
+                }
+
                 when (dataPacket.channelType) {
                     UdpBridgeProtocol.CHANNEL_VIDEO -> {
                         videoDecoder.feedRawVideoChunk(dataPacket.payload)
-                        _receiverState.update { currentState ->
-                            currentState.copy(
-                                phoneBridgeIp = senderHost ?: currentState.phoneBridgeIp,
-                                heartbeatsSent = heartbeatsSentCounter.get(),
-                                udpPacketsReceived = currentState.udpPacketsReceived + 1L,
-                                udpBytesReceived = currentState.udpBytesReceived + length,
-                                udpSequenceDrops = currentState.udpSequenceDrops + sequenceDrops,
-                                lastSocketError = lastErrorText,
-                            )
-                        }
                     }
                     UdpBridgeProtocol.CHANNEL_DUML -> {
                         val outcome = DumlProtocol.tryParseDumlFrame(
@@ -470,11 +482,10 @@ class UdpBridgeReceiver(
                             availableLength = dataPacket.payload.size,
                         )
                         if (outcome is DumlParseOutcome.Parsed) {
+                            dumlFramesReceivedCounter.incrementAndGet()
                             handleParsedDumlFrame(
                                 frame = outcome.frame,
                                 senderHost = senderHost,
-                                packetBytes = length,
-                                sequenceDrops = sequenceDrops,
                             )
                         }
                     }
@@ -493,8 +504,6 @@ class UdpBridgeReceiver(
     private fun handleParsedDumlFrame(
         frame: DumlFrame,
         senderHost: String?,
-        packetBytes: Int,
-        sequenceDrops: Long,
     ) {
         val sourceLabel = DumlProtocol.formatModuleName(frame.sourceModuleId)
         val decodedOsd = DumlProtocol.decodeFlightControllerOsdTelemetry(frame)
@@ -556,10 +565,11 @@ class UdpBridgeReceiver(
             currentState.copy(
                 phoneBridgeIp = senderHost ?: currentState.phoneBridgeIp,
                 heartbeatsSent = heartbeatsSentCounter.get(),
-                udpPacketsReceived = currentState.udpPacketsReceived + 1L,
-                udpBytesReceived = currentState.udpBytesReceived + packetBytes,
-                udpSequenceDrops = currentState.udpSequenceDrops + sequenceDrops,
-                dumlFramesReceived = currentState.dumlFramesReceived + 1L,
+                udpPacketsReceived = udpPacketsReceivedCounter.get(),
+                udpBytesReceived = udpBytesReceivedCounter.get(),
+                udpSequenceDrops = udpSequenceDropsCounter.get(),
+                dumlFramesReceived = dumlFramesReceivedCounter.get(),
+                videoDecoderMetrics = latestVideoDecoderMetrics,
                 lastSourceModule = sourceLabel,
                 remoteControllerAxes = decodedAxes ?: currentState.remoteControllerAxes,
                 flightControllerTelemetry = updatedTelemetry,
@@ -636,6 +646,18 @@ class UdpBridgeReceiver(
                         lastSocketError = lastErrorText,
                     )
                 }
+            }
+        } else if (lastReceivedTimestampMillis > 0L) {
+            // Periodically refresh transport and decoder metrics when active if telemetry has paused.
+            _receiverState.update { currentState ->
+                currentState.copy(
+                    heartbeatsSent = heartbeatsSentCounter.get(),
+                    udpPacketsReceived = udpPacketsReceivedCounter.get(),
+                    udpBytesReceived = udpBytesReceivedCounter.get(),
+                    udpSequenceDrops = udpSequenceDropsCounter.get(),
+                    dumlFramesReceived = dumlFramesReceivedCounter.get(),
+                    videoDecoderMetrics = latestVideoDecoderMetrics,
+                )
             }
         }
     }

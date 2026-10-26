@@ -483,6 +483,11 @@ class H264VideoDecoder(
     }
 
     private fun runInputLoop() {
+        try {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_VIDEO)
+        } catch (_: Exception) {
+            // Fallback to default thread priority.
+        }
         while (isDecoderRunning.get() && !Thread.currentThread().isInterrupted) {
             try {
                 val chunk = chunkQueue.poll(100, TimeUnit.MILLISECONDS) ?: continue
@@ -514,7 +519,12 @@ class H264VideoDecoder(
         }
 
         try {
-            val inputBufferIndex = codec.dequeueInputBuffer(10_000L)
+            var inputBufferIndex = -1
+            var attempts = 0
+            while (isDecoderRunning.get() && inputBufferIndex < 0 && attempts < 5) {
+                inputBufferIndex = codec.dequeueInputBuffer(10_000L)
+                attempts++
+            }
             if (inputBufferIndex >= 0) {
                 val inputBuffer = codec.getInputBuffer(inputBufferIndex) ?: return
                 inputBuffer.clear()
@@ -536,7 +546,14 @@ class H264VideoDecoder(
     }
 
     private fun runOutputLoop(codec: MediaCodec) {
+        try {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_VIDEO)
+        } catch (_: Exception) {
+            // Fallback to default thread priority.
+        }
         val bufferInfo = MediaCodec.BufferInfo()
+        var lastRenderTimestampNs = 0L
+
         while (isDecoderRunning.get() && !Thread.currentThread().isInterrupted) {
             try {
                 when (val outputIndex = codec.dequeueOutputBuffer(bufferInfo, 16_000L)) {
@@ -553,7 +570,26 @@ class H264VideoDecoder(
                     MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
                     else -> {
                         if (outputIndex >= 0) {
-                            codec.releaseOutputBuffer(outputIndex, true)
+                            val nowNs = System.nanoTime()
+                            val fps = rollingFps
+                            val targetIntervalNs = if (fps >= 15f) {
+                                (1_000_000_000L / fps.toLong()).coerceIn(16_666_667L, 40_000_000L)
+                            } else {
+                                33_333_333L
+                            }
+
+                            val scheduledTimeNs = if (lastRenderTimestampNs == 0L || (nowNs - lastRenderTimestampNs) > 100_000_000L) {
+                                nowNs
+                            } else {
+                                minOf(
+                                    maxOf(nowNs, lastRenderTimestampNs + targetIntervalNs),
+                                    nowNs + MAX_PACING_LEAD_NANOS,
+                                )
+                            }
+
+                            lastRenderTimestampNs = scheduledTimeNs
+                            codec.releaseOutputBuffer(outputIndex, scheduledTimeNs)
+
                             val count = framesDecodedCounter.incrementAndGet()
                             if (count == 1L || count % 5L == 0L) {
                                 publishMetrics()
@@ -618,5 +654,10 @@ class H264VideoDecoder(
                 bitrateKbps = rollingBitrateKbps,
             ),
         )
+    }
+
+    companion object {
+        /** Maximum future scheduling lead time in nanoseconds (50 ms) to cap presentation pacing latency. */
+        const val MAX_PACING_LEAD_NANOS: Long = 50_000_000L
     }
 }

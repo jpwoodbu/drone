@@ -1,9 +1,9 @@
 package one.woodbury.drone.mirror
 
-import android.graphics.SurfaceTexture
 import android.os.Bundle
 import android.view.Surface
-import android.view.TextureView
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -209,38 +209,23 @@ fun MirrorCockpitScreen(
                     AndroidView(
                         modifier = Modifier.fillMaxSize(),
                         factory = { context ->
-                            TextureView(context).apply {
-                                var activeSurface: Surface? = null
-                                surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                                    override fun onSurfaceTextureAvailable(
-                                        surfaceTexture: SurfaceTexture,
-                                        width: Int,
-                                        height: Int,
-                                    ) {
-                                        val surface = Surface(surfaceTexture)
-                                        activeSurface = surface
-                                        videoDecoder.attachSurface(surface)
+                            SurfaceView(context).apply {
+                                holder.addCallback(object : SurfaceHolder.Callback {
+                                    override fun surfaceCreated(holder: SurfaceHolder) {
+                                        videoDecoder.attachSurface(holder.surface)
                                     }
 
-                                    override fun onSurfaceTextureSizeChanged(
-                                        surfaceTexture: SurfaceTexture,
+                                    override fun surfaceChanged(
+                                        holder: SurfaceHolder,
+                                        format: Int,
                                         width: Int,
                                         height: Int,
                                     ) = Unit
 
-                                    override fun onSurfaceTextureDestroyed(
-                                        surfaceTexture: SurfaceTexture,
-                                    ): Boolean {
+                                    override fun surfaceDestroyed(holder: SurfaceHolder) {
                                         videoDecoder.detachSurface()
-                                        activeSurface?.release()
-                                        activeSurface = null
-                                        return true
                                     }
-
-                                    override fun onSurfaceTextureUpdated(
-                                        surfaceTexture: SurfaceTexture,
-                                    ) = Unit
-                                }
+                                })
                             }
                         },
                     )
