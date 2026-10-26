@@ -55,6 +55,7 @@ data class MirrorReceiverState(
     val unitSystem: UnitSystem = UnitSystem.METRIC,
     val isHudEnabled: Boolean = false,
     val hudOpacity: Float = 0.85f,
+    val isGridOverlayEnabled: Boolean = false,
     val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
     val homeLatitudeDegrees: Double? = null,
     val homeLongitudeDegrees: Double? = null,
@@ -110,6 +111,9 @@ class UdpBridgeReceiver(
 
     @Volatile
     private var lastErrorText: String? = null
+
+    @Volatile
+    private var lastCButtonPressed: Boolean = false
 
     private val _receiverState = MutableStateFlow(
         MirrorReceiverState(
@@ -213,6 +217,15 @@ class UdpBridgeReceiver(
             .apply()
         _receiverState.update { currentState ->
             currentState.copy(hudOpacity = clamped)
+        }
+    }
+
+    /**
+     * Toggles whether the rule-of-thirds photograph grid overlay is displayed over the live video.
+     */
+    fun toggleGridOverlay() {
+        _receiverState.update { currentState ->
+            currentState.copy(isGridOverlayEnabled = !currentState.isGridOverlayEnabled)
         }
     }
 
@@ -489,6 +502,16 @@ class UdpBridgeReceiver(
         val decodedAxes = DumlProtocol.decodeRemoteControllerAxes(frame)
         val decodedGimbal = DumlProtocol.decodeGimbalTelemetry(frame)
         val decodedCamera = DumlProtocol.decodeCameraTelemetry(frame)
+
+        if (decodedAxes != null) {
+            val isPressed = decodedAxes.isCButtonPressed
+            if (isPressed && !lastCButtonPressed) {
+                _receiverState.update { currentState ->
+                    currentState.copy(isGridOverlayEnabled = !currentState.isGridOverlayEnabled)
+                }
+            }
+            lastCButtonPressed = isPressed
+        }
 
         _receiverState.update { currentState ->
             val updatedBattery = when {

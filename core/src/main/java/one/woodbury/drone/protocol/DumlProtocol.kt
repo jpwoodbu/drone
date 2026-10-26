@@ -93,6 +93,15 @@ object DumlProtocol {
      */
     const val RC_BUTTON_MASK_FUNCTION: Int = 0x10
 
+    /**
+     * Bitmask in byte `12` (`0x0C`) of `DataRcGetPushParams` (`0x06 / 0x05`) for the physical
+     * right-shoulder `C` button (`Custom2` `0x08`).
+     */
+    const val RC_BUTTON_MASK_CUSTOM2: Int = 0x08
+
+    /** Alias for [RC_BUTTON_MASK_CUSTOM2]. */
+    const val RC_BUTTON_MASK_C: Int = RC_BUTTON_MASK_CUSTOM2
+
     /** Bitmask in byte `12` (`0x0C`) of `DataRcGetPushParams` (`0x06 / 0x05`) for the physical video record button. */
     const val RC_BUTTON_MASK_RECORD: Int = 0x80
 
@@ -865,6 +874,8 @@ object DumlProtocol {
             (payload[12].toInt() and RC_BUTTON_MASK_RECORD) != 0
         val isShutterButtonPressed = payload.size >= 13 &&
             (payload[12].toInt() and RC_BUTTON_MASK_SHUTTER) != 0
+        val isCButtonPressed = payload.size >= 13 &&
+            (payload[12].toInt() and RC_BUTTON_MASK_CUSTOM2) != 0
 
         return RemoteControllerAxes(
             rightStickHorizontal = rightStickHorizontal,
@@ -875,6 +886,7 @@ object DumlProtocol {
             isFunctionButtonPressed = isFunctionButtonPressed,
             isRecordButtonPressed = isRecordButtonPressed,
             isShutterButtonPressed = isShutterButtonPressed,
+            isCButtonPressed = isCButtonPressed,
         )
     }
 
@@ -1178,6 +1190,7 @@ data class RemoteControllerAxes(
     val isFunctionButtonPressed: Boolean = false,
     val isRecordButtonPressed: Boolean = false,
     val isShutterButtonPressed: Boolean = false,
+    val isCButtonPressed: Boolean = false,
 )
 
 /**

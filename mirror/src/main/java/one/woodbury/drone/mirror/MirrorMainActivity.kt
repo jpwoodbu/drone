@@ -298,7 +298,11 @@ fun MirrorCockpitScreen(
                     }
                 }
 
-                if (state.isHudEnabled) {
+                if (state.isGridOverlayEnabled) {
+                    RuleOfThirdsGridOverlay()
+                }
+
+                if (state.isHudEnabled && !state.isGridOverlayEnabled) {
                     HudOverlay(
                         state = state,
                         onOpenBatteryHealth = { showBatteryDialog = true },
@@ -661,6 +665,7 @@ private fun BottomStatusBar(
     val flightMode = telemetry?.flightMode ?: "—"
     val isMotorsRunning = telemetry?.motorsRunning == true
     val isFunctionButtonPressed = state.remoteControllerAxes?.isFunctionButtonPressed == true
+    val isCButtonPressed = state.remoteControllerAxes?.isCButtonPressed == true
     val camera = state.cameraTelemetry
     val isRecording = camera?.isRecording == true
     val recordingTimeText = if (camera != null && camera.isRecording) {
@@ -756,6 +761,21 @@ private fun BottomStatusBar(
                     ) {
                         Text(
                             text = "Fn",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFD29922),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+                if (isCButtonPressed) {
+                    ComposeSurface(
+                        color = Color(0xFFD29922).copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(4.dp),
+                    ) {
+                        Text(
+                            text = "C",
                             style = MaterialTheme.typography.bodySmall,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,

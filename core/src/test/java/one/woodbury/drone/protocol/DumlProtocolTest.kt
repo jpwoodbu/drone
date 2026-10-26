@@ -250,6 +250,7 @@ class DumlProtocolTest {
         assertFalse(decoded.isFunctionButtonPressed)
         assertFalse(decoded.isRecordButtonPressed)
         assertFalse(decoded.isShutterButtonPressed)
+        assertFalse(decoded.isCButtonPressed)
 
         val extendedPayload = ByteArray(14)
         payload.copyInto(extendedPayload)
@@ -261,6 +262,7 @@ class DumlProtocolTest {
         assertTrue(fnPressedDecoded!!.isFunctionButtonPressed)
         assertFalse(fnPressedDecoded.isRecordButtonPressed)
         assertFalse(fnPressedDecoded.isShutterButtonPressed)
+        assertFalse(fnPressedDecoded.isCButtonPressed)
 
         extendedPayload[12] = 0x80.toByte() // Physical video record button bit
         val recordPressedDecoded = DumlProtocol.decodeRemoteControllerAxes(
@@ -270,6 +272,7 @@ class DumlProtocolTest {
         assertFalse(recordPressedDecoded!!.isFunctionButtonPressed)
         assertTrue(recordPressedDecoded.isRecordButtonPressed)
         assertFalse(recordPressedDecoded.isShutterButtonPressed)
+        assertFalse(recordPressedDecoded.isCButtonPressed)
 
         extendedPayload[12] = 0x40 // Physical photo shutter button bit
         val shutterPressedDecoded = DumlProtocol.decodeRemoteControllerAxes(
@@ -279,6 +282,7 @@ class DumlProtocolTest {
         assertFalse(shutterPressedDecoded!!.isFunctionButtonPressed)
         assertFalse(shutterPressedDecoded.isRecordButtonPressed)
         assertTrue(shutterPressedDecoded.isShutterButtonPressed)
+        assertFalse(shutterPressedDecoded.isCButtonPressed)
 
         extendedPayload[12] = 0x08 // Custom2 / right-shoulder C button bit
         val cButtonPressedDecoded = DumlProtocol.decodeRemoteControllerAxes(
@@ -288,6 +292,7 @@ class DumlProtocolTest {
         assertFalse(cButtonPressedDecoded!!.isFunctionButtonPressed)
         assertFalse(cButtonPressedDecoded.isRecordButtonPressed)
         assertFalse(cButtonPressedDecoded.isShutterButtonPressed)
+        assertTrue(cButtonPressedDecoded.isCButtonPressed)
     }
 
     @Test
