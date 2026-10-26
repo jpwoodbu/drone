@@ -54,6 +54,7 @@ import one.woodbury.drone.bridge.usb.ControllerConnectionState
 import one.woodbury.drone.bridge.usb.LastDumlPacketInfo
 import one.woodbury.drone.bridge.usb.UsbAccessoryConnectionManager
 import one.woodbury.drone.flight.FlightDynamicsCalculator
+import one.woodbury.drone.protocol.DumlProtocol
 import one.woodbury.drone.bridge.usb.UsbAccessoryDescriptor
 import one.woodbury.drone.video.H264VideoDecoder
 
@@ -544,14 +545,23 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                     label = "Fn Button",
                     value = if (axes.isFunctionButtonPressed) "Pressed" else "Released",
                 )
+                KeyValueItem(
+                    label = "Record Button",
+                    value = if (axes.isRecordButtonPressed) "Pressed" else "Released",
+                )
+                KeyValueItem(
+                    label = "Shutter Button",
+                    value = if (axes.isShutterButtonPressed) "Pressed" else "Released",
+                )
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             }
 
             val telemetry = state.flightControllerTelemetry
             val battery = state.batteryTelemetry
             val gimbal = state.gimbalTelemetry
+            val camera = state.cameraTelemetry
             val batteryPercentage = battery?.percentage ?: telemetry?.batteryPercentage?.takeIf { it > 0 }
-            if (telemetry != null || battery != null || gimbal != null) {
+            if (telemetry != null || battery != null || gimbal != null || camera != null) {
                 Text(
                     text = "Aircraft OSD Telemetry",
                     style = MaterialTheme.typography.labelLarge,
@@ -625,6 +635,25 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                         ),
                     )
                 }
+                if (camera != null) {
+                    KeyValueItem(label = "Camera Mode", value = camera.workModeDescription)
+                    val recordingText = if (camera.isRecording) {
+                        "Recording (${DumlProtocol.formatRecordingTime(camera.recordTimeSeconds)})"
+                    } else {
+                        "Idle"
+                    }
+                    KeyValueItem(label = "Camera Video", value = recordingText)
+                    val sdCardSummary = if (camera.hasSdCard) {
+                        if (camera.sdCardTotalCapacityMb > 0) {
+                            "${camera.sdCardStateDescription} (${camera.sdCardRemainCapacityMb} / ${camera.sdCardTotalCapacityMb} MB)"
+                        } else {
+                            camera.sdCardStateDescription
+                        }
+                    } else {
+                        "No SD Card"
+                    }
+                    KeyValueItem(label = "Camera Storage", value = sdCardSummary)
+                }
                 if (telemetry != null) {
                     KeyValueItem(label = "Flight Mode", value = telemetry.flightMode)
                     val statusFlags = mutableListOf<String>()
@@ -673,6 +702,25 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                 }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             }
+
+            Text(
+                text = "Last Command Interaction",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = state.lastCommandInteraction ?: "No commands sent or ACKs received yet.",
+                style = MaterialTheme.typography.bodyMedium,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Medium,
+                color = if (state.lastCommandInteraction != null) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
             Text(
                 text = "Last DUML Packet",

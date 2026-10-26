@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.update
 import one.woodbury.drone.net.NsdBridgeClient
 import one.woodbury.drone.net.UdpBridgeProtocol
 import one.woodbury.drone.protocol.BatteryTelemetry
+import one.woodbury.drone.protocol.CameraTelemetry
 import one.woodbury.drone.protocol.DumlFrame
 import one.woodbury.drone.protocol.DumlParseOutcome
 import one.woodbury.drone.protocol.DumlProtocol
@@ -50,6 +51,7 @@ data class MirrorReceiverState(
     val flightControllerTelemetry: FlightControllerTelemetry? = null,
     val batteryTelemetry: BatteryTelemetry? = null,
     val gimbalTelemetry: GimbalTelemetry? = null,
+    val cameraTelemetry: CameraTelemetry? = null,
     val unitSystem: UnitSystem = UnitSystem.METRIC,
     val isHudEnabled: Boolean = false,
     val hudOpacity: Float = 0.85f,
@@ -486,6 +488,7 @@ class UdpBridgeReceiver(
         val decodedBattery = DumlProtocol.decodeBatteryTelemetry(frame)
         val decodedAxes = DumlProtocol.decodeRemoteControllerAxes(frame)
         val decodedGimbal = DumlProtocol.decodeGimbalTelemetry(frame)
+        val decodedCamera = DumlProtocol.decodeCameraTelemetry(frame)
 
         _receiverState.update { currentState ->
             val updatedBattery = when {
@@ -539,6 +542,7 @@ class UdpBridgeReceiver(
                 flightControllerTelemetry = updatedTelemetry,
                 batteryTelemetry = updatedBattery,
                 gimbalTelemetry = decodedGimbal ?: currentState.gimbalTelemetry,
+                cameraTelemetry = decodedCamera ?: currentState.cameraTelemetry,
                 homeLatitudeDegrees = updatedHomeLat,
                 homeLongitudeDegrees = updatedHomeLon,
                 lastSocketError = lastErrorText,

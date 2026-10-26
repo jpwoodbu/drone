@@ -248,6 +248,8 @@ class DumlProtocolTest {
         assertEquals(950, decoded.leftStickHorizontal)
         assertEquals(1024, decoded.gimbalWheel)
         assertFalse(decoded.isFunctionButtonPressed)
+        assertFalse(decoded.isRecordButtonPressed)
+        assertFalse(decoded.isShutterButtonPressed)
 
         val extendedPayload = ByteArray(14)
         payload.copyInto(extendedPayload)
@@ -257,6 +259,26 @@ class DumlProtocolTest {
         )
         assertNotNull(fnPressedDecoded)
         assertTrue(fnPressedDecoded!!.isFunctionButtonPressed)
+        assertFalse(fnPressedDecoded.isRecordButtonPressed)
+        assertFalse(fnPressedDecoded.isShutterButtonPressed)
+
+        extendedPayload[12] = 0x80.toByte() // Physical video record button bit
+        val recordPressedDecoded = DumlProtocol.decodeRemoteControllerAxes(
+            frame.copy(payload = extendedPayload),
+        )
+        assertNotNull(recordPressedDecoded)
+        assertFalse(recordPressedDecoded!!.isFunctionButtonPressed)
+        assertTrue(recordPressedDecoded.isRecordButtonPressed)
+        assertFalse(recordPressedDecoded.isShutterButtonPressed)
+
+        extendedPayload[12] = 0x40 // Physical photo shutter button bit
+        val shutterPressedDecoded = DumlProtocol.decodeRemoteControllerAxes(
+            frame.copy(payload = extendedPayload),
+        )
+        assertNotNull(shutterPressedDecoded)
+        assertFalse(shutterPressedDecoded!!.isFunctionButtonPressed)
+        assertFalse(shutterPressedDecoded.isRecordButtonPressed)
+        assertTrue(shutterPressedDecoded.isShutterButtonPressed)
 
         extendedPayload[12] = 0x08 // Custom2 / right-shoulder C button bit
         val cButtonPressedDecoded = DumlProtocol.decodeRemoteControllerAxes(
@@ -264,6 +286,8 @@ class DumlProtocolTest {
         )
         assertNotNull(cButtonPressedDecoded)
         assertFalse(cButtonPressedDecoded!!.isFunctionButtonPressed)
+        assertFalse(cButtonPressedDecoded.isRecordButtonPressed)
+        assertFalse(cButtonPressedDecoded.isShutterButtonPressed)
     }
 
     @Test
@@ -708,5 +732,248 @@ class DumlProtocolTest {
             byteArrayOf(DumlProtocol.FLYC_FUNCTION_CONTROL_AUTO_LAND.toByte()),
             parsedFrames[0].payload,
         )
+    }
+
+    @Test
+    fun decodeCameraTelemetry_extractsRecordingStateAndElapsedRecordingTime() {
+        val payload = ByteArray(24)
+        val buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+
+        // b0: recordState = 2 (Recording), photoState = 0 (Idle)
+        payload[0] = ((2 shl 6) or (0 shl 3)).toByte()
+        // b1: hasSdCard = true (bit 1), sdCardState = 0 (Normal, bits 2..5)
+        payload[1] = ((0 shl 2) or (1 shl 1)).toByte()
+        // b4: workMode = 1 (Video)
+        payload[4] = 1
+        buffer.putInt(5, 61000)
+        buffer.putInt(9, 45000)
+        buffer.putInt(13, 1200)
+        buffer.putInt(17, 7200)
+        buffer.putShort(21, 83.toShort())
+        payload[23] = 4
+
+        val frame = DumlFrame(
+            sourceModuleId = DumlProtocol.MODULE_CAMERA,
+            destinationModuleId = DumlProtocol.MODULE_MOBILE_APP,
+            sequenceNumber = 42,
+            commandType = DumlProtocol.COMMAND_TYPE_RESPONSE_ACK,
+            commandSet = DumlProtocol.COMMAND_SET_CAMERA,
+            commandId = DumlProtocol.CMD_CAMERA_PUSH_STATE_INFO,
+            payload = payload,
+        )
+
+        val camera = DumlProtocol.decodeCameraTelemetry(frame)
+        assertNotNull(camera)
+        assertTrue(camera!!.isRecording)
+        assertEquals(83, camera.recordTimeSeconds)
+        assertFalse(camera.isShootingPhoto)
+        assertEquals(0, camera.photoState)
+        assertEquals("Idle", camera.photoStateDescription)
+        assertTrue(camera.hasSdCard)
+        assertEquals(0, camera.sdCardState)
+        assertEquals("Normal", camera.sdCardStateDescription)
+        assertEquals(1, camera.workMode)
+        assertEquals(61000, camera.sdCardTotalCapacityMb)
+        assertEquals(45000, camera.sdCardRemainCapacityMb)
+        assertEquals(1200, camera.remainPhotoNum)
+        assertEquals(7200, camera.remainVideoTimerSeconds)
+        assertEquals(4, camera.cameraType)
+    }
+
+    @Test
+    fun decodeCameraTelemetry_readsElapsedRecordingTimeFromOffset29OnExtendedPayloads() {
+        val payload = ByteArray(37)
+        val buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+
+        // b0: recordState = 1 (Recording), photoState = 0 (Idle)
+        payload[0] = ((1 shl 6) or (0 shl 3)).toByte()
+        // b1: hasSdCard = true (bit 1), sdCardState = 0 (Normal)
+        payload[1] = ((0 shl 2) or (1 shl 1)).toByte()
+        payload[4] = 1 // Video mode
+        buffer.putInt(5, 64000)
+        buffer.putInt(9, 48000)
+        buffer.putInt(13, 2000)
+        buffer.putInt(17, 3600)
+        payload[21] = 1 // file_index_mode (1 = sequence). Must NOT be misinterpreted as 1 second elapsed!
+        payload[22] = 0 // fast_playback_info
+        buffer.putShort(29, 142.toShort()) // Real elapsed recording time: 142 seconds (02:22)
+        payload[33] = 13 // cameraType
+
+        val frame = DumlFrame(
+            sourceModuleId = DumlProtocol.MODULE_CAMERA,
+            destinationModuleId = DumlProtocol.MODULE_MOBILE_APP,
+            sequenceNumber = 44,
+            commandType = DumlProtocol.COMMAND_TYPE_RESPONSE_ACK,
+            commandSet = DumlProtocol.COMMAND_SET_CAMERA,
+            commandId = DumlProtocol.CMD_CAMERA_PUSH_STATE_INFO,
+            payload = payload,
+        )
+
+        val camera = DumlProtocol.decodeCameraTelemetry(frame)
+        assertNotNull(camera)
+        assertTrue(camera!!.isRecording)
+        assertEquals(142, camera.recordTimeSeconds)
+        assertEquals("02:22", DumlProtocol.formatRecordingTime(camera.recordTimeSeconds))
+        assertEquals(13, camera.cameraType)
+    }
+
+    @Test
+    fun decodeCameraTelemetry_handlesPhotoCaptureAndSdCardStates() {
+        val payload = ByteArray(24)
+        val buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+
+        // b0: recordState = 0 (Idle), photoState = 1 (Single)
+        payload[0] = ((0 shl 6) or (1 shl 3)).toByte()
+        // b1: hasSdCard = true (bit 1), sdCardState = 8 (Full, bits 2..5)
+        payload[1] = ((8 shl 2) or (1 shl 1)).toByte()
+        payload[4] = 0 // Photo mode
+        buffer.putShort(21, 0.toShort())
+
+        val frame = DumlFrame(
+            sourceModuleId = DumlProtocol.MODULE_CAMERA,
+            destinationModuleId = DumlProtocol.MODULE_MOBILE_APP,
+            sequenceNumber = 43,
+            commandType = DumlProtocol.COMMAND_TYPE_RESPONSE_ACK,
+            commandSet = DumlProtocol.COMMAND_SET_CAMERA,
+            commandId = DumlProtocol.CMD_CAMERA_PUSH_STATE_INFO,
+            payload = payload,
+        )
+
+        val camera = DumlProtocol.decodeCameraTelemetry(frame)
+        assertNotNull(camera)
+        assertFalse(camera!!.isRecording)
+        assertEquals(0, camera.recordTimeSeconds)
+        assertTrue(camera.isShootingPhoto)
+        assertEquals(1, camera.photoState)
+        assertEquals("Single", camera.photoStateDescription)
+        assertTrue(camera.hasSdCard)
+        assertEquals(8, camera.sdCardState)
+        assertEquals("Full", camera.sdCardStateDescription)
+    }
+
+    @Test
+    fun formatRecordingTime_formatsSecondsProperly() {
+        assertEquals("00:00", DumlProtocol.formatRecordingTime(0))
+        assertEquals("00:00", DumlProtocol.formatRecordingTime(-10))
+        assertEquals("00:45", DumlProtocol.formatRecordingTime(45))
+        assertEquals("01:23", DumlProtocol.formatRecordingTime(83))
+        assertEquals("59:59", DumlProtocol.formatRecordingTime(3599))
+        assertEquals("01:00:00", DumlProtocol.formatRecordingTime(3600))
+        assertEquals("01:01:05", DumlProtocol.formatRecordingTime(3665))
+    }
+
+    @Test
+    fun formatSdCardState_and_formatPhotoState_mapKnownValues() {
+        assertEquals("Normal", DumlProtocol.formatSdCardState(0))
+        assertEquals("None", DumlProtocol.formatSdCardState(1))
+        assertEquals("Full", DumlProtocol.formatSdCardState(8))
+        assertEquals("Slow", DumlProtocol.formatSdCardState(9))
+
+        assertEquals("Idle", DumlProtocol.formatPhotoState(0))
+        assertEquals("Single", DumlProtocol.formatPhotoState(1))
+        assertEquals("Burst", DumlProtocol.formatPhotoState(2))
+        assertEquals("Interval", DumlProtocol.formatPhotoState(3))
+        assertEquals("HDR", DumlProtocol.formatPhotoState(4))
+        assertEquals("Panorama", DumlProtocol.formatPhotoState(5))
+    }
+
+    @Test
+    fun formatCameraWorkMode_and_workModeDescription_mapKnownValues() {
+        assertEquals("Shoot Photo (Capture)", DumlProtocol.formatCameraWorkMode(0))
+        assertEquals("Record Video", DumlProtocol.formatCameraWorkMode(1))
+        assertEquals("Playback", DumlProtocol.formatCameraWorkMode(2))
+        assertEquals("Download", DumlProtocol.formatCameraWorkMode(3))
+        assertEquals("Mode (99)", DumlProtocol.formatCameraWorkMode(99))
+
+        val camera = CameraTelemetry(
+            isRecording = false,
+            recordTimeSeconds = 0,
+            isShootingPhoto = false,
+            workMode = 1,
+        )
+        assertEquals("Record Video", camera.workModeDescription)
+    }
+
+    @Test
+    fun buildCameraStartRecordCommand_encodesExpectedFrame() {
+        val command = DumlProtocol.buildCameraStartRecordCommand(sequenceNumber = 100)
+        val parsedFrames = mutableListOf<DumlFrame>()
+        val parser = AoaStreamParser(
+            onDumlFrame = { parsedFrames.add(it) },
+            onVideoChunk = {},
+        )
+        parser.feedBytes(command, command.size)
+
+        assertEquals(1, parsedFrames.size)
+        val frame = parsedFrames[0]
+        assertEquals(DumlProtocol.MODULE_MOBILE_APP, frame.sourceModuleId)
+        assertEquals(DumlProtocol.MODULE_CAMERA, frame.destinationModuleId)
+        assertEquals(100, frame.sequenceNumber)
+        assertEquals(DumlProtocol.COMMAND_SET_CAMERA, frame.commandSet)
+        assertEquals(DumlProtocol.CMD_CAMERA_DO_RECORD, frame.commandId)
+        assertArrayEquals(byteArrayOf(DumlProtocol.CAMERA_RECORD_ACTION_START), frame.payload)
+    }
+
+    @Test
+    fun buildCameraStopRecordCommand_encodesExpectedFrame() {
+        val command = DumlProtocol.buildCameraStopRecordCommand(sequenceNumber = 200)
+        val parsedFrames = mutableListOf<DumlFrame>()
+        val parser = AoaStreamParser(
+            onDumlFrame = { parsedFrames.add(it) },
+            onVideoChunk = {},
+        )
+        parser.feedBytes(command, command.size)
+
+        assertEquals(1, parsedFrames.size)
+        val frame = parsedFrames[0]
+        assertEquals(DumlProtocol.MODULE_MOBILE_APP, frame.sourceModuleId)
+        assertEquals(DumlProtocol.MODULE_CAMERA, frame.destinationModuleId)
+        assertEquals(200, frame.sequenceNumber)
+        assertEquals(DumlProtocol.COMMAND_SET_CAMERA, frame.commandSet)
+        assertEquals(DumlProtocol.CMD_CAMERA_DO_RECORD, frame.commandId)
+        assertArrayEquals(byteArrayOf(DumlProtocol.CAMERA_RECORD_ACTION_STOP), frame.payload)
+    }
+
+    @Test
+    fun buildCameraTakePhotoCommand_encodesExpectedFrame() {
+        val command = DumlProtocol.buildCameraTakePhotoCommand(sequenceNumber = 300)
+        val parsedFrames = mutableListOf<DumlFrame>()
+        val parser = AoaStreamParser(
+            onDumlFrame = { parsedFrames.add(it) },
+            onVideoChunk = {},
+        )
+        parser.feedBytes(command, command.size)
+
+        assertEquals(1, parsedFrames.size)
+        val frame = parsedFrames[0]
+        assertEquals(DumlProtocol.MODULE_MOBILE_APP, frame.sourceModuleId)
+        assertEquals(DumlProtocol.MODULE_CAMERA, frame.destinationModuleId)
+        assertEquals(300, frame.sequenceNumber)
+        assertEquals(DumlProtocol.COMMAND_SET_CAMERA, frame.commandSet)
+        assertEquals(DumlProtocol.CMD_CAMERA_DO_CAPTURE_PHOTO, frame.commandId)
+        assertArrayEquals(byteArrayOf(DumlProtocol.CAMERA_PHOTO_ACTION_SINGLE), frame.payload)
+    }
+
+    @Test
+    fun buildCameraSetWorkModeCommand_encodesExpectedFrame() {
+        val command = DumlProtocol.buildCameraSetWorkModeCommand(
+            sequenceNumber = 400,
+            workMode = DumlProtocol.CAMERA_WORK_MODE_RECORD,
+        )
+        val parsedFrames = mutableListOf<DumlFrame>()
+        val parser = AoaStreamParser(
+            onDumlFrame = { parsedFrames.add(it) },
+            onVideoChunk = {},
+        )
+        parser.feedBytes(command, command.size)
+
+        assertEquals(1, parsedFrames.size)
+        val frame = parsedFrames[0]
+        assertEquals(DumlProtocol.MODULE_MOBILE_APP, frame.sourceModuleId)
+        assertEquals(DumlProtocol.MODULE_CAMERA, frame.destinationModuleId)
+        assertEquals(400, frame.sequenceNumber)
+        assertEquals(DumlProtocol.COMMAND_SET_CAMERA, frame.commandSet)
+        assertEquals(DumlProtocol.CMD_CAMERA_SET_WORK_MODE, frame.commandId)
+        assertArrayEquals(byteArrayOf(0x01), frame.payload)
     }
 }

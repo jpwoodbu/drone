@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -60,6 +61,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import one.woodbury.drone.flight.FlightDynamicsCalculator
+import one.woodbury.drone.protocol.CameraTelemetry
+import one.woodbury.drone.protocol.DumlProtocol
 import one.woodbury.drone.video.H264VideoDecoder
 import kotlin.math.roundToInt
 
@@ -310,7 +313,6 @@ fun MirrorCockpitScreen(
             onOpenNetworkDiagnostics = { showNetworkDialog = true },
             onOpenSettings = { showSettingsDialog = true },
             onOpenFlightModes = { showFlightModesDialog = true },
-            onToggleUnitSystem = toggleUnitSystem,
         )
     }
 }
@@ -651,7 +653,6 @@ private fun BottomStatusBar(
     onOpenNetworkDiagnostics: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenFlightModes: () -> Unit,
-    onToggleUnitSystem: () -> Unit,
 ) {
     val metrics = state.videoDecoderMetrics
     val fpsText = if (metrics.framesPerSecond > 0f) "%.1f fps".format(metrics.framesPerSecond) else "— fps"
@@ -660,6 +661,13 @@ private fun BottomStatusBar(
     val flightMode = telemetry?.flightMode ?: "—"
     val isMotorsRunning = telemetry?.motorsRunning == true
     val isFunctionButtonPressed = state.remoteControllerAxes?.isFunctionButtonPressed == true
+    val camera = state.cameraTelemetry
+    val isRecording = camera?.isRecording == true
+    val recordingTimeText = if (camera != null && camera.isRecording) {
+        DumlProtocol.formatRecordingTime(camera.recordTimeSeconds)
+    } else {
+        null
+    }
 
     val totalPackets = state.udpPacketsReceived + state.udpSequenceDrops
     val dropRate = if (totalPackets > 0L) {
@@ -711,6 +719,22 @@ private fun BottomStatusBar(
                         color = Color.White.copy(alpha = 0.85f),
                     )
                 }
+                if (isRecording && recordingTimeText != null) {
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 4.dp)
+                            .size(8.dp)
+                            .background(Color(0xFFF85149), shape = CircleShape),
+                    )
+                    Text(
+                        text = recordingTimeText,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFF85149),
+                        maxLines = 1,
+                    )
+                }
                 Text(
                     text = "VIDEO: ${metrics.videoWidth}×${metrics.videoHeight} · $mbpsText · $fpsText",
                     style = MaterialTheme.typography.bodySmall,
@@ -718,7 +742,7 @@ private fun BottomStatusBar(
                     color = Color.White.copy(alpha = 0.85f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 4.dp),
+                    modifier = Modifier.padding(start = if (isRecording) 2.dp else 4.dp),
                 )
             }
             Row(
@@ -755,15 +779,13 @@ private fun BottomStatusBar(
                         )
                     }
                 }
+                val isVideoMode = state.cameraTelemetry?.workMode == DumlProtocol.CAMERA_WORK_MODE_RECORD
                 ComposeSurface(
                     color = Color(0xFF21262D),
                     shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .clickable(onClick = onToggleUnitSystem),
                 ) {
                     Text(
-                        text = if (state.unitSystem.isImperial) "IMPERIAL" else "METRIC",
+                        text = if (isVideoMode) "VIDEO" else "PHOTO",
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.SemiBold,

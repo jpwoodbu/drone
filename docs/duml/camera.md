@@ -28,9 +28,29 @@ broadcasts.
 | `0x09`–`0x0C` | 4 bytes | Int32 LE  | `sdCardRemainCapacityMb` | Remaining free space on the micro-SD card in Megabytes (MB)                                                                                          |
 | `0x0D`–`0x10` | 4 bytes | Int32 LE  | `remainPhotoNum`         | Estimated remaining photo shots before SD storage is exhausted                                                                                       |
 | `0x11`–`0x14` | 4 bytes | Int32 LE  | `remainVideoTimer`       | Estimated remaining video record duration in seconds at current resolution                                                                           |
-| `0x15`–`0x16` | 2 bytes | UInt16 LE | `recordTimeSeconds`      | Active recording elapsed time in seconds (`0` when idle)                                                                                             |
-| `0x17`        | 1 byte  | UInt8     | `cameraType`             | Hardware sensor and lens identifier                                                                                                                  |
-| `0x1D`–`0x1E` | 2 bytes | UInt16 LE | `altRecordTime`          | Offset 29 fallback for active recording elapsed time on 31+ byte payloads                                                                            |
+| `0x15`        | 1 byte  | UInt8     | `fileIndexMode`          | DCF file numbering convention (`0` = Reset, `1` = Sequence)                                                                                          |
+| `0x16`        | 1 byte  | UInt8     | `fastPlayBackInfo`       | Fast playback mode configuration flags                                                                                                               |
+| `0x17`–`0x18` | 2 bytes | UInt16 LE | `photoOsdInfo`           | OSD display visibility overlay bitmask                                                                                                               |
+| `0x19`–`0x1A` | 2 bytes | Bytes     | `reserved`               | Internal DSP state                                                                                                                                   |
+| `0x1B`        | 1 byte  | UInt8     | `inDebugMode`            | Factory debugging enabled flag                                                                                                                       |
+| `0x1C`        | 1 byte  | UInt8     | `reserved`               | Reserved                                                                                                                                             |
+| `0x1D`–`0x1E` | 2 bytes | UInt16 LE | `recordTimeSeconds`      | Active recording elapsed time in seconds (`0` when idle). Offset 29 decimal                                                                          |
+| `0x1F`        | 1 byte  | UInt8     | `maxPhotoNum`            | Maximum burst capture shot count                                                                                                                     |
+| `0x20`        | 1 byte  | UInt8     | `histogramEnable`        | Real-time luminance histogram enable flag                                                                                                            |
+| `0x21`        | 1 byte  | UInt8     | `cameraType`             | Hardware sensor and lens identifier (`13` = FC6310, etc.). Offset 33 decimal                                                                         |
+| `0x22`–`0x23` | 2 bytes | Bytes     | `reserved`               | Reserved                                                                                                                                             |
+| `0x24`        | 1 byte  | UInt8     | `version`                | State payload format revision                                                                                                                        |
+| `0x25`–`0x26` | 2 bytes | Bytes     | `padding`                | Trailing word alignment padding on 39-byte payloads                                                                                                  |
+
+> [!NOTE] **Offset `0x15` (`21`) vs `0x1D` (`29`) for Recording Time:** On 37-
+> and 39-byte extended payloads used across consumer drones (such as the Mavic
+> series), byte offset `0x15` (`21`) is `fileIndexMode` (which is typically set
+> to `0x01` for sequential file numbering). Reading offset `21` as an elapsed
+> time causes the recording timer to freeze at `00:01`. The true active elapsed
+> recording timer is stored as a 16-bit little-endian integer at offset `0x1D`
+> (`29`–`30`). Legacy 24-byte payloads from older firmware (such as early
+> Phantom 3) did not include the intervening OSD configuration fields and
+> located `recordTimeSeconds` at offset `21`.
 
 ---
 
@@ -74,56 +94,55 @@ broadcasts.
 
 ## 3. Outbound Camera Control Commands
 
-When commanding the camera subsystem to start/stop video recording or snap a
-photo, DUML supports both the **SDK Special Command Set (`0x01`)** and the
-**Native Camera Command Set (`0x02`)**.
+All native camera subsystem commands in DUML route to `MODULE_CAMERA` (`0x01`)
+under Native Camera Command Set `0x02` (`COMMAND_SET_CAMERA` /
+`CAMERA_UART_CMD_TEXT`).
+
+> [!IMPORTANT] **Command Set `0x02` vs Legacy Misattribution (`0x01`):**
+> Outbound camera control packets always route to `MODULE_CAMERA`
+> (`destinationModuleId = 0x01`). The embedded `commandSet` byte in DUML frames
+> must be set to `0x02` (`COMMAND_SET_CAMERA`).
+>
+> In the Wireshark dissector (`dji-firmware-tools`), command set `0x01` is
+> designated as `SPECIAL_UART_CMD_TEXT` (`Old Special App Control` `0x01`,
+> `Old Special Remote Control` `0x02`, etc.). Early reverse-engineering projects
+> (including initial commits in `sworrl/GlassFalcon`) mistakenly dispatched
+> camera commands under `commandSet = 0x01` due to an erroneous comment header
+> in `dji-dumlv1-camera.lua`. On physical drone hardware, packets dispatched
+> under `0x01 / 0x02` are dropped without acknowledgment, while `0x01 / 0x01` is
+> consumed by the special app-control layer without triggering physical camera
+> shutter exposure.
+>
+> In the Ambarella camera firmware message dispatcher, `dji_msg_do_capture` is
+> triggered by `0x02 / 0x01` and `dji_msg_do_record` is triggered by
+> `0x02 / 0x02`.
+
+---
 
 ### Video Recording Control
 
+Video recording is initiated and stopped using Native Camera Command Set `0x02`:
+
 #### Start Video Recording
 
-To start video recording, dispatch these packets wrapped in AOA envelopes
+To start video recording, dispatch this packet wrapped in an AOA envelope
 (`0x55 0xCC 0x49 0x57`):
 
-1. **SDK Special Start (`0x01 / 0x21`) -> Camera (`0x01`):**
-   - `destinationModuleId`: `MODULE_CAMERA` (`0x01`)
-   - `commandType`: `0x40` (`COMMAND_TYPE_REQUEST_WITH_ACK`)
-   - `commandSet`: `0x01` (`COMMAND_SET_SPECIAL`)
-   - `commandId`: `0x21` (`CMD_SPECIAL_CAMERA_START_RECORD`)
-   - `payload`: `[0x00]`
-2. **Native Camera Record (`0x02 / 0x11`) -> Camera (`0x01`):**
-   - `destinationModuleId`: `MODULE_CAMERA` (`0x01`)
-   - `commandType`: `0x40` (`COMMAND_TYPE_REQUEST_WITH_ACK`)
-   - `commandSet`: `0x02` (`COMMAND_SET_CAMERA`)
-   - `commandId`: `0x11` (`CMD_CAMERA_RECORD_VIDEO`)
-   - `payload`: `[0x01]` (`0x01` = Start, `0x00` = Stop)
-3. **SDK Special Start (`0x01 / 0x21`) -> Flight Controller (`0x03`):**
-   - `destinationModuleId`: `MODULE_FLIGHT_CONTROLLER` (`0x03`)
-   - `commandType`: `0x40`
-   - `commandSet`: `0x01`
-   - `commandId`: `0x21`
-   - `payload`: `[0x00]` _(Used on firmware variants where external SDK commands
-     route through the autopilot)._
+- **Destination Module ID:** `MODULE_CAMERA` (`0x01`)
+- **Command Type:** `0x40` (`COMMAND_TYPE_REQUEST_WITH_ACK`)
+- **Command Set:** `0x02` (`COMMAND_SET_CAMERA`)
+- **Command ID:** `0x02` (`CMD_CAMERA_DO_RECORD`)
+- **Payload:** `[0x01]` (`CAMERA_RECORD_ACTION_START`)
 
 #### Stop Video Recording
 
 To stop video recording:
 
-1. **SDK Special Stop (`0x01 / 0x22`) -> Camera (`0x01`):**
-   - `destinationModuleId`: `MODULE_CAMERA` (`0x01`)
-   - `commandSet`: `0x01` (`COMMAND_SET_SPECIAL`)
-   - `commandId`: `0x22` (`CMD_SPECIAL_CAMERA_STOP_RECORD`)
-   - `payload`: `[0x00]`
-2. **Native Camera Record (`0x02 / 0x11`) -> Camera (`0x01`):**
-   - `destinationModuleId`: `MODULE_CAMERA` (`0x01`)
-   - `commandSet`: `0x02` (`COMMAND_SET_CAMERA`)
-   - `commandId`: `0x11` (`CMD_CAMERA_RECORD_VIDEO`)
-   - `payload`: `[0x00]` (`0x00` = Stop)
-3. **SDK Special Stop (`0x01 / 0x22`) -> Flight Controller (`0x03`):**
-   - `destinationModuleId`: `MODULE_FLIGHT_CONTROLLER` (`0x03`)
-   - `commandSet`: `0x01`
-   - `commandId`: `0x22`
-   - `payload`: `[0x00]`
+- **Destination Module ID:** `MODULE_CAMERA` (`0x01`)
+- **Command Type:** `0x40` (`COMMAND_TYPE_REQUEST_WITH_ACK`)
+- **Command Set:** `0x02` (`COMMAND_SET_CAMERA`)
+- **Command ID:** `0x02` (`CMD_CAMERA_DO_RECORD`)
+- **Payload:** `[0x00]` (`CAMERA_RECORD_ACTION_STOP`)
 
 ---
 
@@ -131,18 +150,61 @@ To stop video recording:
 
 To trigger still photo capture:
 
-1. **SDK Special Shot (`0x01 / 0x20`) -> Camera (`0x01`):**
-   - `destinationModuleId`: `MODULE_CAMERA` (`0x01`)
-   - `commandSet`: `0x01` (`COMMAND_SET_SPECIAL`)
-   - `commandId`: `0x20` (`CMD_SPECIAL_CAMERA_TAKE_PHOTO`)
-   - `payload`: `[0x00]`
-2. **Native Camera Take Photo (`0x02 / 0x10`) -> Camera (`0x01`):**
-   - `destinationModuleId`: `MODULE_CAMERA` (`0x01`)
-   - `commandSet`: `0x02` (`COMMAND_SET_CAMERA`)
-   - `commandId`: `0x10` (`CMD_CAMERA_TAKE_PHOTO`)
-   - `payload`: `[0x01]`
-3. **SDK Special Shot (`0x01 / 0x20`) -> Flight Controller (`0x03`):**
-   - `destinationModuleId`: `MODULE_FLIGHT_CONTROLLER` (`0x03`)
-   - `commandSet`: `0x01`
-   - `commandId`: `0x20`
-   - `payload`: `[0x00]`
+- **Destination Module ID:** `MODULE_CAMERA` (`0x01`)
+- **Command Type:** `0x40` (`COMMAND_TYPE_REQUEST_WITH_ACK`)
+- **Command Set:** `0x02` (`COMMAND_SET_CAMERA`)
+- **Command ID:** `0x01` (`CMD_CAMERA_DO_CAPTURE_PHOTO`)
+- **Payload:** `[0x01]` (`CAMERA_PHOTO_ACTION_SINGLE`)
+
+---
+
+### Camera Work Mode Configuration
+
+To switch the camera operating mode between photo capture and video recording:
+
+- **Destination Module ID:** `MODULE_CAMERA` (`0x01`)
+- **Command Type:** `0x40` (`COMMAND_TYPE_REQUEST_WITH_ACK`)
+- **Command Set:** `0x02` (`COMMAND_SET_CAMERA`)
+- **Command ID:** `0x10` (`CMD_CAMERA_SET_WORK_MODE`)
+- **Payload:**
+  - `[0x00]`: Shoot Photo Mode (`CAMERA_WORK_MODE_CAPTURE`)
+  - `[0x01]`: Record Video Mode (`CAMERA_WORK_MODE_RECORD`)
+
+---
+
+### Camera Status Queries
+
+#### Video Recording Status Query
+
+To query the current video recording status:
+
+- **Destination Module ID:** `MODULE_CAMERA` (`0x01`)
+- **Command Type:** `0x40` (`COMMAND_TYPE_REQUEST_WITH_ACK`)
+- **Command Set:** `0x02` (`COMMAND_SET_CAMERA`)
+- **Command ID:** `0x11` (`CMD_CAMERA_RECORD_VIDEO_QUERY`)
+- **Payload:** Empty (`[]`) or query flags
+- **ACK Response:** Returns `0x00` with payload `[0x00, 0x01]` indicating active
+  video recording state.
+
+---
+
+## 4. Hardware Interaction: Front Arm LED Auto-Suppression
+
+When a photo snapshot is triggered or video recording is active, the aircraft
+center board / flight controller automatically turns off the red navigation LEDs
+on the front motor arms:
+
+- **During Photo Capture:** The front red LEDs extinguish instantaneously when
+  the shutter command (`0x02 / 0x01`) is accepted and exposure begins, then
+  re-illuminate once single or burst capture completes.
+- **During Video Recording:** The front red LEDs turn off as soon as video
+  recording starts (`0x02 / 0x02` with payload `[0x01]`) and remain off for the
+  entire recording session. They turn back on immediately when recording is
+  stopped (`0x02 / 0x02` with payload `[0x00]`).
+- **Purpose:** Prevents red light wash and internal lens flare/reflections from
+  corrupting photos or video footage, especially in low light or when flying
+  close to reflective surfaces.
+- **Autonomous Coordination:** No external DUML command to the flight controller
+  (`MODULE_FLIGHT_CONTROLLER`) is required from the mobile client; this
+  suppression is coordinated autonomously by the aircraft firmware over internal
+  CAN/UART buses between the camera and flight controller boards.

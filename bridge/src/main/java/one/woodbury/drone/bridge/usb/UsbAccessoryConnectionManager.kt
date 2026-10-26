@@ -9,6 +9,7 @@ import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import androidx.core.content.ContextCompat
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -32,6 +33,7 @@ import one.woodbury.drone.bridge.net.UdpBridgeSenderMetrics
 import one.woodbury.drone.bridge.service.BridgeForegroundService
 import one.woodbury.drone.protocol.AoaStreamParser
 import one.woodbury.drone.protocol.BatteryTelemetry
+import one.woodbury.drone.protocol.CameraTelemetry
 import one.woodbury.drone.protocol.DumlFrame
 import one.woodbury.drone.protocol.DumlProtocol
 import one.woodbury.drone.protocol.FlightControllerTelemetry
@@ -92,7 +94,9 @@ data class ControllerConnectionState(
     val flightControllerTelemetry: FlightControllerTelemetry? = null,
     val batteryTelemetry: BatteryTelemetry? = null,
     val gimbalTelemetry: GimbalTelemetry? = null,
+    val cameraTelemetry: CameraTelemetry? = null,
     val lastDumlPacket: LastDumlPacketInfo? = null,
+    val lastCommandInteraction: String? = null,
     val lastRawHexPreview: String? = null,
     val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
     val udpBridgeMetrics: UdpBridgeSenderMetrics = UdpBridgeSenderMetrics(),
@@ -151,6 +155,22 @@ class UsbAccessoryConnectionManager(
 
     @Volatile
     private var functionButtonAutoLandTriggeredForCurrentHold: Boolean = false
+
+    @Volatile
+    private var isRecordButtonHeld: Boolean = false
+
+    @Volatile
+    private var isShutterButtonHeld: Boolean = false
+
+    /** Deferred camera action queued while waiting for a work mode switch transition to complete. */
+    private enum class PendingCameraAction {
+        NONE,
+        START_RECORD,
+        TAKE_PHOTO,
+    }
+
+    @Volatile
+    private var pendingCameraAction: PendingCameraAction = PendingCameraAction.NONE
 
     private val usbBroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -404,10 +424,57 @@ class UsbAccessoryConnectionManager(
         val decodedBattery = DumlProtocol.decodeBatteryTelemetry(frame)
         val decodedAxes = DumlProtocol.decodeRemoteControllerAxes(frame)
         val decodedGimbal = DumlProtocol.decodeGimbalTelemetry(frame)
+        val decodedCamera = DumlProtocol.decodeCameraTelemetry(frame)
         val decodedVersion = DumlProtocol.decodeDeviceVersionString(frame)
 
         if (decodedAxes != null) {
             handleFunctionButtonState(decodedAxes.isFunctionButtonPressed)
+            handleRecordButtonState(decodedAxes.isRecordButtonPressed)
+            handleShutterButtonState(decodedAxes.isShutterButtonPressed)
+        }
+
+        val isAcknowledgment = (frame.commandType and DumlProtocol.COMMAND_TYPE_RESPONSE_ACK) != 0
+        val isRoutineBatteryResponse = frame.commandSet == DumlProtocol.COMMAND_SET_BATTERY &&
+            (frame.commandId == DumlProtocol.CMD_BATTERY_DYNAMIC_DATA || frame.commandId == DumlProtocol.CMD_BATTERY_CELL_VOLTAGE)
+
+        val commandInteractionSummary = if (isAcknowledgment && !isRoutineBatteryResponse) {
+            val resultCodeDescription = if (frame.payload.isNotEmpty()) {
+                "ret 0x%02X".format(frame.payload[0])
+            } else {
+                "no payload"
+            }
+            val payloadPreview = if (frame.payload.size > 1) {
+                " [${DumlProtocol.formatHexPreview(frame.payload, maxBytes = 8)}]"
+            } else {
+                ""
+            }
+            val responseSummary = "RX ACK: $sourceLabel Set 0x%02X / ID 0x%02X (#%05d: $resultCodeDescription$payloadPreview)".format(
+                frame.commandSet,
+                frame.commandId,
+                frame.sequenceNumber,
+            )
+            Log.i(TAG, responseSummary)
+            responseSummary
+        } else {
+            null
+        }
+
+        val isCameraModeAck = isAcknowledgment &&
+            (frame.sourceModuleId and 0x1F) == DumlProtocol.MODULE_CAMERA &&
+            frame.commandSet == DumlProtocol.COMMAND_SET_CAMERA &&
+            frame.commandId == DumlProtocol.CMD_CAMERA_SET_WORK_MODE
+        if (isCameraModeAck) {
+            if (frame.payload.isNotEmpty() && frame.payload[0] == 0.toByte()) {
+                handlePendingCameraActionOnModeConfirmed()
+            } else {
+                pendingCameraAction = PendingCameraAction.NONE
+            }
+        } else if (decodedCamera != null) {
+            if ((decodedCamera.workMode == DumlProtocol.CAMERA_WORK_MODE_RECORD && pendingCameraAction == PendingCameraAction.START_RECORD) ||
+                (decodedCamera.workMode == DumlProtocol.CAMERA_WORK_MODE_CAPTURE && pendingCameraAction == PendingCameraAction.TAKE_PHOTO)
+            ) {
+                handlePendingCameraActionOnModeConfirmed()
+            }
         }
 
         _connectionState.update { currentState ->
@@ -445,7 +512,9 @@ class UsbAccessoryConnectionManager(
                 flightControllerTelemetry = updatedTelemetry,
                 batteryTelemetry = updatedBattery,
                 gimbalTelemetry = decodedGimbal ?: currentState.gimbalTelemetry,
+                cameraTelemetry = decodedCamera ?: currentState.cameraTelemetry,
                 lastDumlPacket = packetInfo,
+                lastCommandInteraction = commandInteractionSummary ?: currentState.lastCommandInteraction,
             )
         }
     }
@@ -481,11 +550,142 @@ class UsbAccessoryConnectionManager(
                 !telemetry.isAutoLanding
             ) {
                 functionButtonAutoLandTriggeredForCurrentHold = true
+                val sequence = sequenceCounter.getAndIncrement() and 0xFFFF
+                val transmissionSummary = "TX: Auto Land (#%05d)".format(sequence)
+                Log.i(TAG, transmissionSummary)
+                _connectionState.update { currentState ->
+                    currentState.copy(lastCommandInteraction = transmissionSummary)
+                }
                 val autoLandCommand = DumlProtocol.buildAutoLandCommand(
-                    sequenceNumber = sequenceCounter.getAndIncrement() and 0xFFFF,
+                    sequenceNumber = sequence,
                 )
                 writeBytesToAccessory(autoLandCommand)
             }
+        }
+    }
+
+    @Synchronized
+    private fun handlePendingCameraActionOnModeConfirmed() {
+        val action = pendingCameraAction
+        pendingCameraAction = PendingCameraAction.NONE
+        when (action) {
+            PendingCameraAction.TAKE_PHOTO -> {
+                val sequence = sequenceCounter.getAndIncrement() and 0xFFFF
+                val command = DumlProtocol.buildCameraTakePhotoCommand(sequence)
+                val transmissionSummary = "TX: Camera Take Photo (#%05d)".format(sequence)
+                Log.i(TAG, transmissionSummary)
+                _connectionState.update { currentState ->
+                    currentState.copy(lastCommandInteraction = transmissionSummary)
+                }
+                writeBytesToAccessory(command)
+            }
+            PendingCameraAction.START_RECORD -> {
+                val sequence = sequenceCounter.getAndIncrement() and 0xFFFF
+                val command = DumlProtocol.buildCameraStartRecordCommand(sequence)
+                val transmissionSummary = "TX: Camera Start Record (#%05d)".format(sequence)
+                Log.i(TAG, transmissionSummary)
+                _connectionState.update { currentState ->
+                    currentState.copy(lastCommandInteraction = transmissionSummary)
+                }
+                writeBytesToAccessory(command)
+            }
+            PendingCameraAction.NONE -> Unit
+        }
+    }
+
+    @Synchronized
+    private fun handleRecordButtonState(isPressed: Boolean) {
+        if (!isPressed) {
+            isRecordButtonHeld = false
+            return
+        }
+        if (isRecordButtonHeld) {
+            return
+        }
+        isRecordButtonHeld = true
+
+        val isCurrentlyRecording = _connectionState.value.cameraTelemetry?.isRecording == true
+        if (isCurrentlyRecording) {
+            pendingCameraAction = PendingCameraAction.NONE
+            val sequence = sequenceCounter.getAndIncrement() and 0xFFFF
+            val command = DumlProtocol.buildCameraStopRecordCommand(sequence)
+            val transmissionSummary = "TX: Camera Stop Record (#%05d)".format(sequence)
+            Log.i(TAG, transmissionSummary)
+            _connectionState.update { currentState ->
+                currentState.copy(lastCommandInteraction = transmissionSummary)
+            }
+            writeBytesToAccessory(command)
+            return
+        }
+
+        val currentWorkMode = _connectionState.value.cameraTelemetry?.workMode
+        if (currentWorkMode == DumlProtocol.CAMERA_WORK_MODE_RECORD) {
+            pendingCameraAction = PendingCameraAction.NONE
+            val sequence = sequenceCounter.getAndIncrement() and 0xFFFF
+            val command = DumlProtocol.buildCameraStartRecordCommand(sequence)
+            val transmissionSummary = "TX: Camera Start Record (#%05d)".format(sequence)
+            Log.i(TAG, transmissionSummary)
+            _connectionState.update { currentState ->
+                currentState.copy(lastCommandInteraction = transmissionSummary)
+            }
+            writeBytesToAccessory(command)
+        } else {
+            pendingCameraAction = PendingCameraAction.START_RECORD
+            val sequence = sequenceCounter.getAndIncrement() and 0xFFFF
+            val command = DumlProtocol.buildCameraSetWorkModeCommand(
+                sequenceNumber = sequence,
+                workMode = DumlProtocol.CAMERA_WORK_MODE_RECORD,
+            )
+            val transmissionSummary = "TX: Camera Set Video Mode (#%05d)".format(sequence)
+            Log.i(TAG, transmissionSummary)
+            _connectionState.update { currentState ->
+                currentState.copy(lastCommandInteraction = transmissionSummary)
+            }
+            writeBytesToAccessory(command)
+        }
+    }
+
+    @Synchronized
+    private fun handleShutterButtonState(isPressed: Boolean) {
+        if (!isPressed) {
+            isShutterButtonHeld = false
+            return
+        }
+        if (isShutterButtonHeld) {
+            return
+        }
+        isShutterButtonHeld = true
+
+        val isCurrentlyRecording = _connectionState.value.cameraTelemetry?.isRecording == true
+        if (isCurrentlyRecording) {
+            Log.w(TAG, "Ignoring shutter button press because video recording is in progress.")
+            return
+        }
+
+        val currentWorkMode = _connectionState.value.cameraTelemetry?.workMode
+        if (currentWorkMode == DumlProtocol.CAMERA_WORK_MODE_CAPTURE) {
+            pendingCameraAction = PendingCameraAction.NONE
+            val sequence = sequenceCounter.getAndIncrement() and 0xFFFF
+            val command = DumlProtocol.buildCameraTakePhotoCommand(sequence)
+            val transmissionSummary = "TX: Camera Take Photo (#%05d)".format(sequence)
+            Log.i(TAG, transmissionSummary)
+            _connectionState.update { currentState ->
+                currentState.copy(lastCommandInteraction = transmissionSummary)
+            }
+            writeBytesToAccessory(command)
+        } else {
+            pendingCameraAction = PendingCameraAction.TAKE_PHOTO
+            val sequence = sequenceCounter.getAndIncrement() and 0xFFFF
+            val command = DumlProtocol.buildCameraSetWorkModeCommand(
+                sequenceNumber = sequence,
+                workMode = DumlProtocol.CAMERA_WORK_MODE_CAPTURE,
+            )
+            val transmissionSummary = "TX: Camera Set Photo Mode (#%05d)".format(sequence)
+            Log.i(TAG, transmissionSummary)
+            _connectionState.update { currentState ->
+                currentState.copy(lastCommandInteraction = transmissionSummary)
+            }
+            writeBytesToAccessory(command)
         }
     }
 
@@ -523,6 +723,9 @@ class UsbAccessoryConnectionManager(
         functionButtonAutoLandJob?.cancel()
         functionButtonAutoLandJob = null
         functionButtonAutoLandTriggeredForCurrentHold = false
+        isRecordButtonHeld = false
+        isShutterButtonHeld = false
+        pendingCameraAction = PendingCameraAction.NONE
         activeOutputStream = null
         val descriptorToClose = activeFileDescriptor
         activeFileDescriptor = null
@@ -600,6 +803,7 @@ class UsbAccessoryConnectionManager(
     }
 
     companion object {
+        private const val TAG: String = "BridgeDuml"
         private const val ACTION_USB_PERMISSION = "one.woodbury.drone.bridge.USB_PERMISSION"
         private const val FUNCTION_BUTTON_AUTO_LAND_HOLD_MILLIS: Long = 2_000L
     }

@@ -36,7 +36,41 @@ object DumlProtocol {
     const val MODULE_CENTER_BOARD: Int = 0x05
 
     /** DUML command sets for subsystems that differ from their module ID. */
+    const val COMMAND_SET_CAMERA: Int = 0x02
     const val COMMAND_SET_BATTERY: Int = 0x0D
+
+    /**
+     * DUML command set for camera action triggers.
+     *
+     * Note: All native Ambarella camera commands belong to [COMMAND_SET_CAMERA] (`0x02`),
+     * while `0x01` represents `SPECIAL_UART_CMD_TEXT` (`Old Special App Control`).
+     */
+    const val COMMAND_SET_CAMERA_ACTION: Int = COMMAND_SET_CAMERA
+
+    /** DUML command IDs for camera operations (`COMMAND_SET_CAMERA = 0x02`). */
+    const val CMD_CAMERA_DO_CAPTURE_PHOTO: Int = 0x01
+    const val CMD_CAMERA_DO_RECORD: Int = 0x02
+    const val CMD_CAMERA_SET_WORK_MODE: Int = 0x10
+    const val CMD_CAMERA_RECORD_VIDEO_QUERY: Int = 0x11
+    const val CMD_CAMERA_PUSH_STATE_INFO: Int = 0x80
+    const val CMD_CAMERA_GET_PUSH_STATE_INFO_ALT: Int = 0x01
+
+    /** Deprecated aliases for backwards compatibility. */
+    const val CMD_CAMERA_ACTION_TAKE_PHOTO: Int = CMD_CAMERA_DO_CAPTURE_PHOTO
+    const val CMD_CAMERA_ACTION_RECORD_VIDEO: Int = CMD_CAMERA_DO_RECORD
+
+    /** Action parameters for video recording control (`CMD_CAMERA_DO_RECORD = 0x02`). */
+    const val CAMERA_RECORD_ACTION_STOP: Byte = 0x00
+    const val CAMERA_RECORD_ACTION_START: Byte = 0x01
+
+    /** Action parameter for single photo capture (`CMD_CAMERA_DO_CAPTURE_PHOTO = 0x01`). */
+    const val CAMERA_PHOTO_ACTION_SINGLE: Byte = 0x01
+
+    /** Camera operational work modes. */
+    const val CAMERA_WORK_MODE_CAPTURE: Int = 0
+    const val CAMERA_WORK_MODE_RECORD: Int = 1
+    const val CAMERA_WORK_MODE_PLAYBACK: Int = 2
+    const val CAMERA_WORK_MODE_DOWNLOAD: Int = 3
 
     /** DUML command IDs for battery management. */
     const val CMD_BATTERY_DYNAMIC_DATA: Int = 0x02
@@ -58,6 +92,12 @@ object DumlProtocol {
      * front `Fn` button (`Custom1` `0x10`), excluding the right-shoulder `C` button (`Custom2` `0x08`).
      */
     const val RC_BUTTON_MASK_FUNCTION: Int = 0x10
+
+    /** Bitmask in byte `12` (`0x0C`) of `DataRcGetPushParams` (`0x06 / 0x05`) for the physical video record button. */
+    const val RC_BUTTON_MASK_RECORD: Int = 0x80
+
+    /** Bitmask in byte `12` (`0x0C`) of `DataRcGetPushParams` (`0x06 / 0x05`) for the physical photo shutter button. */
+    const val RC_BUTTON_MASK_SHUTTER: Int = 0x40
 
     /** DUML command types. */
     const val COMMAND_TYPE_REQUEST_WITH_ACK: Int = 0x40
@@ -281,6 +321,86 @@ object DumlProtocol {
      */
     fun buildAutoLandCommand(sequenceNumber: Int): ByteArray {
         val dumlFrame = buildAutoLandDumlFrame(sequenceNumber)
+        return wrapInAoaEnvelope(dumlFrame, AOA_CHANNEL_DUML)
+    }
+
+    /**
+     * Builds a DUML v1 packet instructing the camera subsystem to start video recording.
+     *
+     * Constructs the native camera record command (`0x02 / 0x02`) with argument `0x01` (start recording),
+     * directed to [MODULE_CAMERA] (`0x01`) and wrapped inside an 8-byte AOA multiplex header
+     * for transmission over the USB accessory stream.
+     */
+    fun buildCameraStartRecordCommand(sequenceNumber: Int): ByteArray {
+        val dumlFrame = buildDumlFrame(
+            sourceModuleId = MODULE_MOBILE_APP,
+            destinationModuleId = MODULE_CAMERA,
+            sequenceNumber = sequenceNumber,
+            commandType = COMMAND_TYPE_REQUEST_WITH_ACK,
+            commandSet = COMMAND_SET_CAMERA,
+            commandId = CMD_CAMERA_DO_RECORD,
+            payload = byteArrayOf(CAMERA_RECORD_ACTION_START),
+        )
+        return wrapInAoaEnvelope(dumlFrame, AOA_CHANNEL_DUML)
+    }
+
+    /**
+     * Builds a DUML v1 packet instructing the camera subsystem to stop video recording.
+     *
+     * Constructs the native camera record command (`0x02 / 0x02`) with argument `0x00` (stop recording),
+     * directed to [MODULE_CAMERA] (`0x01`) and wrapped inside an 8-byte AOA multiplex header
+     * for transmission over the USB accessory stream.
+     */
+    fun buildCameraStopRecordCommand(sequenceNumber: Int): ByteArray {
+        val dumlFrame = buildDumlFrame(
+            sourceModuleId = MODULE_MOBILE_APP,
+            destinationModuleId = MODULE_CAMERA,
+            sequenceNumber = sequenceNumber,
+            commandType = COMMAND_TYPE_REQUEST_WITH_ACK,
+            commandSet = COMMAND_SET_CAMERA,
+            commandId = CMD_CAMERA_DO_RECORD,
+            payload = byteArrayOf(CAMERA_RECORD_ACTION_STOP),
+        )
+        return wrapInAoaEnvelope(dumlFrame, AOA_CHANNEL_DUML)
+    }
+
+    /**
+     * Builds a DUML v1 packet instructing the camera subsystem to capture a still photo snapshot.
+     *
+     * Constructs the native camera capture command (`0x02 / 0x01`) with argument `0x01` (single photo capture),
+     * directed to [MODULE_CAMERA] (`0x01`) and wrapped inside an 8-byte AOA multiplex header
+     * for transmission over the USB accessory stream.
+     */
+    fun buildCameraTakePhotoCommand(sequenceNumber: Int): ByteArray {
+        val dumlFrame = buildDumlFrame(
+            sourceModuleId = MODULE_MOBILE_APP,
+            destinationModuleId = MODULE_CAMERA,
+            sequenceNumber = sequenceNumber,
+            commandType = COMMAND_TYPE_REQUEST_WITH_ACK,
+            commandSet = COMMAND_SET_CAMERA,
+            commandId = CMD_CAMERA_DO_CAPTURE_PHOTO,
+            payload = byteArrayOf(CAMERA_PHOTO_ACTION_SINGLE),
+        )
+        return wrapInAoaEnvelope(dumlFrame, AOA_CHANNEL_DUML)
+    }
+
+    /**
+     * Builds a DUML v1 packet instructing the camera subsystem to switch its operating work mode.
+     *
+     * Constructs the native camera settings command (`0x02 / 0x10`) with argument [workMode]
+     * (`0` = Photo, `1` = Video), directed to [MODULE_CAMERA] (`0x01`) and wrapped inside
+     * an 8-byte AOA multiplex header for transmission over the USB accessory stream.
+     */
+    fun buildCameraSetWorkModeCommand(sequenceNumber: Int, workMode: Int): ByteArray {
+        val dumlFrame = buildDumlFrame(
+            sourceModuleId = MODULE_MOBILE_APP,
+            destinationModuleId = MODULE_CAMERA,
+            sequenceNumber = sequenceNumber,
+            commandType = COMMAND_TYPE_REQUEST_WITH_ACK,
+            commandSet = COMMAND_SET_CAMERA,
+            commandId = CMD_CAMERA_SET_WORK_MODE,
+            payload = byteArrayOf(workMode.toByte()),
+        )
         return wrapInAoaEnvelope(dumlFrame, AOA_CHANNEL_DUML)
     }
 
@@ -741,6 +861,10 @@ object DumlProtocol {
 
         val isFunctionButtonPressed = payload.size >= 13 &&
             (payload[12].toInt() and RC_BUTTON_MASK_FUNCTION) != 0
+        val isRecordButtonPressed = payload.size >= 13 &&
+            (payload[12].toInt() and RC_BUTTON_MASK_RECORD) != 0
+        val isShutterButtonPressed = payload.size >= 13 &&
+            (payload[12].toInt() and RC_BUTTON_MASK_SHUTTER) != 0
 
         return RemoteControllerAxes(
             rightStickHorizontal = rightStickHorizontal,
@@ -749,6 +873,8 @@ object DumlProtocol {
             leftStickHorizontal = leftStickHorizontal,
             gimbalWheel = gimbalWheel,
             isFunctionButtonPressed = isFunctionButtonPressed,
+            isRecordButtonPressed = isRecordButtonPressed,
+            isShutterButtonPressed = isShutterButtonPressed,
         )
     }
 
@@ -794,6 +920,143 @@ object DumlProtocol {
             yawDegrees = yawDegrees,
             mode = mode,
         )
+    }
+
+    /**
+     * Decodes a Camera State Info telemetry packet (`commandSet = 0x02` or `0x01`, `commandId = 0x80` or `0x01`).
+     *
+     * In DUML v1, the Ambarella camera subsystem (`MODULE_CAMERA`) broadcasts periodic telemetry state
+     * pushes containing active video recording state, elapsed recording time, photo capture mode, and
+     * micro-SD card health and capacity metrics.
+     */
+    fun decodeCameraTelemetry(frame: DumlFrame): CameraTelemetry? {
+        val isCameraSubsystem = (frame.sourceModuleId and 0x1F) == MODULE_CAMERA ||
+            frame.commandSet == COMMAND_SET_CAMERA
+        if (!isCameraSubsystem) {
+            return null
+        }
+        if (frame.commandId != CMD_CAMERA_PUSH_STATE_INFO && frame.commandId != CMD_CAMERA_GET_PUSH_STATE_INFO_ALT) {
+            return null
+        }
+        val payload = frame.payload
+        if (payload.size < 4) {
+            return null
+        }
+
+        val b0 = payload[0].toInt() and 0xFF
+        val b1 = payload[1].toInt() and 0xFF
+
+        val photoState = (b0 ushr 3) and 0x07
+        val isShootingPhoto = photoState != 0
+
+        val recordState = (b0 ushr 6) and 0x03
+        val isRecording = recordState == 1 || recordState == 2
+
+        val hasSdCard = ((b1 ushr 1) and 0x01) != 0
+        val sdCardState = (b1 ushr 2) and 0x0F
+
+        val byteBuffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+
+        val workMode = if (payload.size >= 5) payload[4].toInt() and 0xFF else 0
+        val sdCardTotalCapacityMb = if (payload.size >= 9) byteBuffer.getInt(5) else 0
+        val sdCardRemainCapacityMb = if (payload.size >= 13) byteBuffer.getInt(9) else 0
+        val remainPhotoNum = if (payload.size >= 17) byteBuffer.getInt(13) else 0
+        val remainVideoTimerSeconds = if (payload.size >= 21) byteBuffer.getInt(17) else 0
+
+        // In DUML Camera State Info payloads (37 or 39 bytes on consumer firmware), active elapsed
+        // recording time is stored as a 16-bit little-endian integer at offset 29 (0x1D). Offset 21
+        // holds `file_index_mode` (1 for sequence, 0 for reset). On legacy 24-byte payloads without
+        // extended fields, offset 21 was used.
+        val recordTimeSeconds = when {
+            payload.size >= 31 -> byteBuffer.getShort(29).toInt() and 0xFFFF
+            payload.size >= 23 -> byteBuffer.getShort(21).toInt() and 0xFFFF
+            else -> 0
+        }
+
+        val cameraType = when {
+            payload.size >= 34 -> payload[33].toInt() and 0xFF
+            payload.size >= 24 -> payload[23].toInt() and 0xFF
+            else -> 0
+        }
+
+        return CameraTelemetry(
+            isRecording = isRecording,
+            recordTimeSeconds = recordTimeSeconds,
+            isShootingPhoto = isShootingPhoto,
+            photoState = photoState,
+            hasSdCard = hasSdCard,
+            sdCardState = sdCardState,
+            workMode = workMode,
+            sdCardTotalCapacityMb = sdCardTotalCapacityMb,
+            sdCardRemainCapacityMb = sdCardRemainCapacityMb,
+            remainPhotoNum = remainPhotoNum,
+            remainVideoTimerSeconds = remainVideoTimerSeconds,
+            cameraType = cameraType,
+        )
+    }
+
+    /**
+     * Formats video recording elapsed time into `MM:SS` (or `HH:MM:SS` if 1 hour or greater).
+     */
+    fun formatRecordingTime(totalSeconds: Int): String {
+        if (totalSeconds <= 0) return "00:00"
+        val hours = totalSeconds / 3600
+        val minutes = (totalSeconds % 3600) / 60
+        val seconds = totalSeconds % 60
+        return if (hours > 0) {
+            "%02d:%02d:%02d".format(hours, minutes, seconds)
+        } else {
+            "%02d:%02d".format(minutes, seconds)
+        }
+    }
+
+    /**
+     * Returns a human-readable description for an SD card status code.
+     */
+    fun formatSdCardState(state: Int): String = when (state) {
+        0 -> "Normal"
+        1 -> "None"
+        2 -> "Invalid"
+        3 -> "Write Protected"
+        4 -> "Unformatted"
+        5 -> "Formatting"
+        6 -> "Illegal Filesystem"
+        7 -> "Busy"
+        8 -> "Full"
+        9 -> "Slow"
+        10 -> "Unknown"
+        11 -> "No Remain File Indices"
+        12 -> "Index Max"
+        13 -> "Initializing"
+        14 -> "To Format"
+        15 -> "Recovering File"
+        else -> "State ($state)"
+    }
+
+    /**
+     * Returns a human-readable description for a photo capture state code.
+     */
+    fun formatPhotoState(state: Int): String = when (state) {
+        0 -> "Idle"
+        1 -> "Single"
+        2 -> "Burst"
+        3 -> "Interval"
+        4 -> "HDR"
+        5 -> "Panorama"
+        6 -> "Raw Burst"
+        7 -> "HyperLapse"
+        else -> "State ($state)"
+    }
+
+    /**
+     * Returns a human-readable description for a camera operational work mode.
+     */
+    fun formatCameraWorkMode(workMode: Int): String = when (workMode) {
+        CAMERA_WORK_MODE_CAPTURE -> "Shoot Photo (Capture)"
+        CAMERA_WORK_MODE_RECORD -> "Record Video"
+        CAMERA_WORK_MODE_PLAYBACK -> "Playback"
+        CAMERA_WORK_MODE_DOWNLOAD -> "Download"
+        else -> "Mode ($workMode)"
     }
 
     /**
@@ -904,7 +1167,7 @@ data class FlightControllerTelemetry(
 )
 
 /**
- * Remote Controller physical stick, gimbal wheel, and function button states (`0x06/0x05`).
+ * Remote Controller physical stick, gimbal wheel, and button states (`0x06/0x05`).
  */
 data class RemoteControllerAxes(
     val rightStickHorizontal: Int,
@@ -913,6 +1176,8 @@ data class RemoteControllerAxes(
     val leftStickHorizontal: Int,
     val gimbalWheel: Int,
     val isFunctionButtonPressed: Boolean = false,
+    val isRecordButtonPressed: Boolean = false,
+    val isShutterButtonPressed: Boolean = false,
 )
 
 /**
@@ -924,6 +1189,34 @@ data class GimbalTelemetry(
     val yawDegrees: Float,
     val mode: Int? = null,
 )
+
+/**
+ * Camera operational status, recording state, and media storage telemetry.
+ * Parsed from DUML Camera State push packets (`commandSet = 0x02` or `0x01`, `commandId = 0x80` or `0x01`).
+ */
+data class CameraTelemetry(
+    val isRecording: Boolean,
+    val recordTimeSeconds: Int,
+    val isShootingPhoto: Boolean,
+    val photoState: Int = 0,
+    val hasSdCard: Boolean = true,
+    val sdCardState: Int = 0,
+    val workMode: Int = 0,
+    val sdCardTotalCapacityMb: Int = 0,
+    val sdCardRemainCapacityMb: Int = 0,
+    val remainPhotoNum: Int = 0,
+    val remainVideoTimerSeconds: Int = 0,
+    val cameraType: Int = 0,
+) {
+    val sdCardStateDescription: String
+        get() = DumlProtocol.formatSdCardState(sdCardState)
+
+    val photoStateDescription: String
+        get() = DumlProtocol.formatPhotoState(photoState)
+
+    val workModeDescription: String
+        get() = DumlProtocol.formatCameraWorkMode(workMode)
+}
 
 /**
  * Smart Battery telemetry (`commandSet = 0x0D` or `module = 0x0B`).

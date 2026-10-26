@@ -98,8 +98,8 @@ files:
 2. [**`remote_controller.md`**](remote_controller.md): RC stick axes, gimbal
    wheel, and physical button bitmasks (`DataRcGetPushParams` `0x06 / 0x05`).
 3. [**`camera.md`**](camera.md): Camera push telemetry (`0x02 / 0x80`), video
-   record commands (`0x01 / 0x21`, `0x02 / 0x11`), photo capture
-   (`0x01 / 0x20`), SD card state tables.
+   record commands (`0x02 / 0x02`), photo capture (`0x02 / 0x01`), work mode
+   switch (`0x02 / 0x10`), SD card state tables.
 4. [**`flight_controller.md`**](flight_controller.md): OSD telemetry
    (`0x03 / 0x43`), flight mode state machine, automated function control
    (`0x03 / 0x2A`).
