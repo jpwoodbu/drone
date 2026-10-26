@@ -5,10 +5,10 @@
 - Prefer to parse returned data passively from inbound DUML telemetry streams
   rather than issuing active polling queries or write-type commands to the
   aircraft.
-- Outbound command traffic sent to aircraft modules (especially during flight
-  or motor start) can interfere with flight-critical hardware routines (such as
-  aborting motor start commands). Only transmit outbound packets when
-  explicitly necessary and confirmed safe.
+- Outbound command traffic sent to aircraft modules (especially during flight or
+  motor start) can interfere with flight-critical hardware routines (such as
+  aborting motor start commands). Only transmit outbound packets when explicitly
+  necessary and confirmed safe.
 
 ## Mirror Application Target Architecture
 
@@ -21,11 +21,10 @@
 
 ## Mirror Application Status Bars Terminology
 
-- In the `:mirror` application UI, refer to the upper telemetry bar as the
-  "top status bar" and the lower diagnostics bar as the "bottom status bar".
+- In the `:mirror` application UI, refer to the upper telemetry bar as the "top
+  status bar" and the lower diagnostics bar as the "bottom status bar".
 
 ## DUML Protocol Documentation
 
 - Refer to the local reverse-engineered DUML v1 reference documentation in
   `docs/duml/` before researching online or implementing DUML packets.
-
