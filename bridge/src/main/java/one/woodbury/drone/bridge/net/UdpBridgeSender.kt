@@ -63,6 +63,15 @@ class UdpBridgeSender(
     private var lastErrorText: String? = null
 
     @Volatile
+    private var cachedLocalIpv4Addresses: List<String> = emptyList()
+
+    @Volatile
+    private var cachedLocalIpv4AddressSet: Set<String> = emptySet()
+
+    @Volatile
+    private var lastLocalAddressRefreshMillis: Long = 0L
+
+    @Volatile
     private var nsdStatusText: String = "Not registered"
 
     @Volatile
@@ -297,10 +306,8 @@ class UdpBridgeSender(
                         continue
                     }
                     val hostAddress = senderAddress.hostAddress
-                    val localAddresses = UdpBridgeProtocol.queryLocalIpv4Addresses(applicationContext)
-                        .map { it.ipv4Address }
-                        .toSet()
-                    if (hostAddress != null && hostAddress !in localAddresses) {
+                    refreshLocalIpv4AddressesIfNeeded()
+                    if (hostAddress != null && hostAddress !in cachedLocalIpv4AddressSet) {
                         val now = System.currentTimeMillis()
                         subscribersByHost[hostAddress] = SubscriberEntry(
                             address = senderAddress,
@@ -360,11 +367,8 @@ class UdpBridgeSender(
                 }
 
                 if (sentCountForPacket > 0) {
-                    val totalPackets = packetsSentCounter.addAndGet(sentCountForPacket.toLong())
+                    packetsSentCounter.addAndGet(sentCountForPacket.toLong())
                     bytesSentCounter.addAndGet(datagramBytes.size.toLong() * sentCountForPacket)
-                    if (totalPackets == 1L || totalPackets % 25L == 0L) {
-                        publishMetrics()
-                    }
                 }
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
@@ -416,24 +420,44 @@ class UdpBridgeSender(
         }
     }
 
-    private fun publishMetrics() {
-        val localEndpoints = UdpBridgeProtocol.queryLocalIpv4Addresses(applicationContext)
-            .map { "${it.ipv4Address} (${it.interfaceName})" }
+    /**
+     * Refreshes the cached list and set of local IPv4 addresses if forced or expired.
+     */
+    private fun refreshLocalIpv4AddressesIfNeeded(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (force || cachedLocalIpv4Addresses.isEmpty() || now - lastLocalAddressRefreshMillis > 10_000L) {
+            val addresses = UdpBridgeProtocol.queryLocalIpv4Addresses(applicationContext)
+            cachedLocalIpv4Addresses = addresses.map { "${it.ipv4Address} (${it.interfaceName})" }
+            cachedLocalIpv4AddressSet = addresses.map { it.ipv4Address }.toSet()
+            lastLocalAddressRefreshMillis = now
+        }
+    }
+
+    /**
+     * Returns an instantaneous snapshot of bridge sender metrics by reading atomic counters.
+     */
+    fun getMetricsSnapshot(refreshLocalAddresses: Boolean = false): UdpBridgeSenderMetrics {
+        if (refreshLocalAddresses) {
+            refreshLocalIpv4AddressesIfNeeded(force = true)
+        }
         val activeSubscriberHosts = subscribersByHost.keys().toList().sorted()
-        onMetricsChanged(
-            UdpBridgeSenderMetrics(
-                isListening = isRunning.get(),
-                isAcceptingSubscribers = isAcceptingSubscribers.get(),
-                socketStatus = socketStatusText,
-                nsdStatus = nsdStatusText,
-                lastSocketError = lastErrorText,
-                localIpv4Addresses = localEndpoints,
-                activeSubscribers = activeSubscriberHosts,
-                announcePacketsSent = announceSentCounter.get(),
-                udpPacketsSent = packetsSentCounter.get(),
-                udpBytesSent = bytesSentCounter.get(),
-                heartbeatsReceived = heartbeatsReceivedCounter.get(),
-            ),
+        return UdpBridgeSenderMetrics(
+            isListening = isRunning.get(),
+            isAcceptingSubscribers = isAcceptingSubscribers.get(),
+            socketStatus = socketStatusText,
+            nsdStatus = nsdStatusText,
+            lastSocketError = lastErrorText,
+            localIpv4Addresses = cachedLocalIpv4Addresses,
+            activeSubscribers = activeSubscriberHosts,
+            announcePacketsSent = announceSentCounter.get(),
+            udpPacketsSent = packetsSentCounter.get(),
+            udpBytesSent = bytesSentCounter.get(),
+            heartbeatsReceived = heartbeatsReceivedCounter.get(),
         )
+    }
+
+    private fun publishMetrics(refreshLocalAddresses: Boolean = false) {
+        refreshLocalIpv4AddressesIfNeeded(force = refreshLocalAddresses)
+        onMetricsChanged(getMetricsSnapshot())
     }
 }

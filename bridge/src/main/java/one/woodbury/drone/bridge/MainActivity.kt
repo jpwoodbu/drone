@@ -2,10 +2,10 @@ package one.woodbury.drone.bridge
 
 import android.content.Intent
 import android.os.Bundle
-import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -32,6 +32,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -49,14 +50,24 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import one.woodbury.drone.bridge.ui.theme.DroneTheme
+import one.woodbury.drone.bridge.usb.BridgeMainScreenState
 import one.woodbury.drone.bridge.usb.ConnectionPhase
-import one.woodbury.drone.bridge.usb.ControllerConnectionState
 import one.woodbury.drone.bridge.usb.LastDumlPacketInfo
+import one.woodbury.drone.bridge.usb.StreamDebugState
+import one.woodbury.drone.bridge.usb.TelemetryState
 import one.woodbury.drone.bridge.usb.UsbAccessoryConnectionManager
+import one.woodbury.drone.bridge.usb.UsbAccessoryDescriptor
 import one.woodbury.drone.flight.FlightDynamicsCalculator
 import one.woodbury.drone.protocol.DumlProtocol
-import one.woodbury.drone.bridge.usb.UsbAccessoryDescriptor
 import one.woodbury.drone.video.H264VideoDecoder
+
+/**
+ * Screen identifiers for navigation within `:bridge`.
+ */
+enum class BridgeScreen {
+    MAIN,
+    STREAM_DEBUG,
+}
 
 /**
  * Main diagnostic activity for connecting to the DJI S01A remote controller over USB AOA
@@ -74,21 +85,62 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             DroneTheme {
-                val connectionState by connectionManager.connectionState.collectAsState()
+                var currentScreen by rememberSaveable { mutableStateOf(BridgeScreen.MAIN) }
+
+                BackHandler(enabled = currentScreen != BridgeScreen.MAIN) {
+                    currentScreen = BridgeScreen.MAIN
+                }
+
+                DisposableEffect(currentScreen) {
+                    connectionManager.isDebugStreamActive = (currentScreen == BridgeScreen.STREAM_DEBUG)
+                    onDispose {
+                        if (currentScreen != BridgeScreen.STREAM_DEBUG) {
+                            connectionManager.isDebugStreamActive = false
+                        }
+                    }
+                }
+
+                val mainScreenState by connectionManager.mainScreenState.collectAsState()
+                val telemetryState by connectionManager.telemetryState.collectAsState()
+                val streamDebugState by connectionManager.streamDebugState.collectAsState()
+
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    ControllerDiagnosticsScreen(
-                        state = connectionState,
-                        videoDecoder = connectionManager.videoDecoder,
-                        onSetVideoPreviewEnabled = { isEnabled ->
-                            connectionManager.isVideoPreviewEnabled = isEnabled
-                        },
-                        onDisconnectSubscribersClicked = { connectionManager.disconnectAllSubscribers() },
-                        onResumeSubscribersClicked = { connectionManager.resumeSubscribers() },
-                        modifier = Modifier.padding(innerPadding),
-                    )
+                    when (currentScreen) {
+                        BridgeScreen.MAIN -> {
+                            ControllerDiagnosticsScreen(
+                                mainState = mainScreenState,
+                                telemetryState = telemetryState,
+                                videoDecoder = connectionManager.videoDecoder,
+                                onSetVideoPreviewEnabled = { isEnabled ->
+                                    connectionManager.isVideoPreviewEnabled = isEnabled
+                                },
+                                onDisconnectSubscribersClicked = { connectionManager.disconnectAllSubscribers() },
+                                onResumeSubscribersClicked = { connectionManager.resumeSubscribers() },
+                                onOpenDebugClicked = { currentScreen = BridgeScreen.STREAM_DEBUG },
+                                modifier = Modifier.padding(innerPadding),
+                            )
+                        }
+                        BridgeScreen.STREAM_DEBUG -> {
+                            StreamDebugScreen(
+                                state = streamDebugState,
+                                onBackClicked = { currentScreen = BridgeScreen.MAIN },
+                                modifier = Modifier.padding(innerPadding),
+                            )
+                        }
+                    }
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        connectionManager.onUiVisibilityChanged(isVisible = true)
+    }
+
+    override fun onStop() {
+        connectionManager.onUiVisibilityChanged(isVisible = false)
+        super.onStop()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -110,11 +162,13 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun ControllerDiagnosticsScreen(
-    state: ControllerConnectionState,
+    mainState: BridgeMainScreenState,
+    telemetryState: TelemetryState,
     videoDecoder: H264VideoDecoder? = null,
     onSetVideoPreviewEnabled: (Boolean) -> Unit,
     onDisconnectSubscribersClicked: () -> Unit,
     onResumeSubscribersClicked: () -> Unit,
+    onOpenDebugClicked: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -130,33 +184,74 @@ fun ControllerDiagnosticsScreen(
             fontWeight = FontWeight.Bold,
         )
 
-        ConnectionStatusCard(
-            state = state,
-        )
+        ConnectionStatusCard(state = mainState)
 
         NetworkServerCard(
-            state = state,
+            state = mainState,
             onDisconnectSubscribersClicked = onDisconnectSubscribersClicked,
             onResumeSubscribersClicked = onResumeSubscribersClicked,
         )
 
         LiveVideoFeedCard(
-            state = state,
+            state = mainState,
             videoDecoder = videoDecoder,
             onSetVideoPreviewEnabled = onSetVideoPreviewEnabled,
         )
 
-        UsbDescriptorCard(descriptor = state.accessoryDescriptor)
+        UsbDescriptorCard(descriptor = mainState.accessoryDescriptor)
+
+        TelemetryDetailsCard(state = telemetryState)
+
+        OutlinedButton(
+            onClick = onOpenDebugClicked,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(text = "View Stream Debugger")
+        }
+    }
+}
+
+@Composable
+fun StreamDebugScreen(
+    state: StreamDebugState,
+    onBackClicked: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            OutlinedButton(onClick = onBackClicked) {
+                Text(text = "← Back")
+            }
+            Text(
+                text = "Stream Debugger",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
+        }
 
         StreamMetricsCard(state = state)
 
-        TelemetryDetailsCard(state = state)
+        LastCommandInteractionCard(interaction = state.lastCommandInteraction)
+
+        LastDumlPacketCard(packet = state.lastDumlPacket)
+
+        LastRawUsbReadCard(hexPreview = state.lastRawHexPreview)
     }
 }
 
 @Composable
 private fun NetworkServerCard(
-    state: ControllerConnectionState,
+    state: BridgeMainScreenState,
     onDisconnectSubscribersClicked: () -> Unit,
     onResumeSubscribersClicked: () -> Unit,
 ) {
@@ -262,7 +357,7 @@ private fun NetworkServerCard(
 
 @Composable
 private fun LiveVideoFeedCard(
-    state: ControllerConnectionState,
+    state: BridgeMainScreenState,
     videoDecoder: H264VideoDecoder?,
     onSetVideoPreviewEnabled: (Boolean) -> Unit,
 ) {
@@ -339,7 +434,7 @@ private fun LiveVideoFeedCard(
 
                     if (metrics.framesDecoded == 0L) {
                         Text(
-                            text = if (state.aoaVideoEnvelopesReceived > 0L) {
+                            text = if (state.hasVideoEnvelopes) {
                                 "Awaiting H.264 SPS/Keyframe…"
                             } else {
                                 "No video stream (power on aircraft)"
@@ -368,7 +463,7 @@ private fun LiveVideoFeedCard(
 
 @Composable
 private fun ConnectionStatusCard(
-    state: ControllerConnectionState,
+    state: BridgeMainScreenState,
 ) {
     val containerColor = when (state.connectionPhase) {
         ConnectionPhase.CONNECTED -> MaterialTheme.colorScheme.primaryContainer
@@ -440,7 +535,7 @@ private fun UsbDescriptorCard(descriptor: UsbAccessoryDescriptor?) {
 }
 
 @Composable
-private fun StreamMetricsCard(state: ControllerConnectionState) {
+private fun StreamMetricsCard(state: StreamDebugState) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -491,10 +586,141 @@ private fun StreamMetricsCard(state: ControllerConnectionState) {
 }
 
 @Composable
-private fun TelemetryDetailsCard(state: ControllerConnectionState) {
+private fun LastCommandInteractionCard(interaction: String?) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Last Command Interaction",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            HorizontalDivider()
+            Text(
+                text = interaction ?: "No commands sent or ACKs received yet.",
+                style = MaterialTheme.typography.bodyMedium,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Medium,
+                color = if (interaction != null) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun LastDumlPacketCard(packet: LastDumlPacketInfo?) {
     var isPayloadHexExpanded by rememberSaveable { mutableStateOf(false) }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Last DUML Packet",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            HorizontalDivider()
+            KeyValueItem(
+                label = "Source",
+                value = packet?.sourceModule ?: "—",
+            )
+            KeyValueItem(
+                label = "Destination",
+                value = packet?.destinationModule ?: "—",
+            )
+            KeyValueItem(
+                label = "Command",
+                value = packet?.commandSetAndId ?: "—",
+            )
+            KeyValueItem(
+                label = "Seq / Length",
+                value = packet?.sequenceAndLength ?: "—",
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isPayloadHexExpanded = !isPayloadHexExpanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Payload (Hex)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = if (isPayloadHexExpanded) "Hide ▲" else "Show ▼",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            if (isPayloadHexExpanded) {
+                Text(
+                    text = packet?.payloadHex ?: "Waiting for DUML frames…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LastRawUsbReadCard(hexPreview: String?) {
     var isRawHexExpanded by rememberSaveable { mutableStateOf(false) }
 
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isRawHexExpanded = !isRawHexExpanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Last Raw USB Read (Hex)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = if (isRawHexExpanded) "Hide ▲" else "Show ▼",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            if (isRawHexExpanded) {
+                HorizontalDivider()
+                Text(
+                    text = hexPreview ?: "No bytes read yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TelemetryDetailsCard(state: TelemetryState) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -685,107 +911,11 @@ private fun TelemetryDetailsCard(state: ControllerConnectionState) {
                         value = "Motors=${telemetry.motorsRunning}, InAir=${telemetry.aircraftInAir}",
                     )
                 }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-            }
-
-            Text(
-                text = "Last Command Interaction",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = state.lastCommandInteraction ?: "No commands sent or ACKs received yet.",
-                style = MaterialTheme.typography.bodyMedium,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Medium,
-                color = if (state.lastCommandInteraction != null) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-            Text(
-                text = "Last DUML Packet",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            val lastPacket = state.lastDumlPacket
-            KeyValueItem(
-                label = "Source",
-                value = lastPacket?.sourceModule ?: "—",
-            )
-            KeyValueItem(
-                label = "Destination",
-                value = lastPacket?.destinationModule ?: "—",
-            )
-            KeyValueItem(
-                label = "Command",
-                value = lastPacket?.commandSetAndId ?: "—",
-            )
-            KeyValueItem(
-                label = "Seq / Length",
-                value = lastPacket?.sequenceAndLength ?: "—",
-            )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { isPayloadHexExpanded = !isPayloadHexExpanded },
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            } else if (axes == null) {
                 Text(
-                    text = "Payload (Hex)",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = if (isPayloadHexExpanded) "Hide ▲" else "Show ▼",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            if (isPayloadHexExpanded) {
-                Text(
-                    text = lastPacket?.payloadHex ?: "Waiting for DUML frames…",
+                    text = "Waiting for controller or aircraft telemetry frames…",
                     style = MaterialTheme.typography.bodyMedium,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { isRawHexExpanded = !isRawHexExpanded },
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "Last Raw USB Read (Hex)",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = if (isRawHexExpanded) "Hide ▲" else "Show ▼",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            if (isRawHexExpanded) {
-                Text(
-                    text = state.lastRawHexPreview ?: "No bytes read yet.",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -823,7 +953,7 @@ private fun KeyValueItem(
 fun ControllerDiagnosticsScreenPreview() {
     DroneTheme {
         ControllerDiagnosticsScreen(
-            state = ControllerConnectionState(
+            mainState = BridgeMainScreenState(
                 connectionPhase = ConnectionPhase.CONNECTED,
                 statusMessage = "Connected to DJI T600 over Android Open Accessory (AOA).",
                 accessoryDescriptor = UsbAccessoryDescriptor(
@@ -834,6 +964,22 @@ fun ControllerDiagnosticsScreenPreview() {
                     uri = "http://www.dji.com",
                     serial = "S01A-DEMO",
                 ),
+            ),
+            telemetryState = TelemetryState(),
+            onSetVideoPreviewEnabled = {},
+            onDisconnectSubscribersClicked = {},
+            onResumeSubscribersClicked = {},
+            onOpenDebugClicked = {},
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun StreamDebugScreenPreview() {
+    DroneTheme {
+        StreamDebugScreen(
+            state = StreamDebugState(
                 totalBytesReceived = 48_192L,
                 totalBytesSent = 42L,
                 aoaDumlEnvelopesReceived = 310L,
@@ -850,9 +996,7 @@ fun ControllerDiagnosticsScreenPreview() {
                 ),
                 lastRawHexPreview = "55 CC 49 57 17 00 00 00 55 17 04 92",
             ),
-            onSetVideoPreviewEnabled = {},
-            onDisconnectSubscribersClicked = {},
-            onResumeSubscribersClicked = {},
+            onBackClicked = {},
         )
     }
 }

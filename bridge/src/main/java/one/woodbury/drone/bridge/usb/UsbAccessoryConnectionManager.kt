@@ -14,8 +14,10 @@ import androidx.core.content.ContextCompat
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -76,12 +78,32 @@ data class LastDumlPacketInfo(
 )
 
 /**
- * Immutable UI state representing everything retrieved over USB from the remote controller.
+ * Immutable main screen state updated on connection events and sampled periodically at 1 Hz.
  */
-data class ControllerConnectionState(
+data class BridgeMainScreenState(
     val connectionPhase: ConnectionPhase = ConnectionPhase.DISCONNECTED,
     val statusMessage: String = "No USB accessory connected. Unplug the side slider cable on the S01A remote and connect its bottom USB-A port to this phone.",
     val accessoryDescriptor: UsbAccessoryDescriptor? = null,
+    val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
+    val udpBridgeMetrics: UdpBridgeSenderMetrics = UdpBridgeSenderMetrics(),
+    val hasVideoEnvelopes: Boolean = false,
+)
+
+/**
+ * Fast-path controller and aircraft telemetry state, updated immediately whenever values change.
+ */
+data class TelemetryState(
+    val remoteControllerAxes: RemoteControllerAxes? = null,
+    val flightControllerTelemetry: FlightControllerTelemetry? = null,
+    val batteryTelemetry: BatteryTelemetry? = null,
+    val gimbalTelemetry: GimbalTelemetry? = null,
+    val cameraTelemetry: CameraTelemetry? = null,
+)
+
+/**
+ * Detailed diagnostic state displayed on the stream debugger screen at live stream frequency.
+ */
+data class StreamDebugState(
     val totalBytesReceived: Long = 0L,
     val totalBytesSent: Long = 0L,
     val dumlFramesReceived: Long = 0L,
@@ -90,16 +112,9 @@ data class ControllerConnectionState(
     val videoBytesReceived: Long = 0L,
     val observedModules: Set<String> = emptySet(),
     val moduleVersions: Map<String, String> = emptyMap(),
-    val remoteControllerAxes: RemoteControllerAxes? = null,
-    val flightControllerTelemetry: FlightControllerTelemetry? = null,
-    val batteryTelemetry: BatteryTelemetry? = null,
-    val gimbalTelemetry: GimbalTelemetry? = null,
-    val cameraTelemetry: CameraTelemetry? = null,
-    val lastDumlPacket: LastDumlPacketInfo? = null,
     val lastCommandInteraction: String? = null,
+    val lastDumlPacket: LastDumlPacketInfo? = null,
     val lastRawHexPreview: String? = null,
-    val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
-    val udpBridgeMetrics: UdpBridgeSenderMetrics = UdpBridgeSenderMetrics(),
 )
 
 /**
@@ -116,13 +131,52 @@ class UsbAccessoryConnectionManager(
     private val sequenceCounter = AtomicInteger(1)
     private val isReceiverRegistered = AtomicBoolean(false)
 
-    private val _connectionState = MutableStateFlow(ControllerConnectionState())
-    val connectionState: StateFlow<ControllerConnectionState> = _connectionState.asStateFlow()
+    private val _mainScreenState = MutableStateFlow(BridgeMainScreenState())
+    val mainScreenState: StateFlow<BridgeMainScreenState> = _mainScreenState.asStateFlow()
+
+    private val _telemetryState = MutableStateFlow(TelemetryState())
+    val telemetryState: StateFlow<TelemetryState> = _telemetryState.asStateFlow()
+
+    private val _streamDebugState = MutableStateFlow(StreamDebugState())
+    val streamDebugState: StateFlow<StreamDebugState> = _streamDebugState.asStateFlow()
+
+    // Lock-free atomic counters for high-frequency stream metrics.
+    private val totalBytesReceivedCounter = AtomicLong(0L)
+    private val totalBytesSentCounter = AtomicLong(0L)
+    private val dumlFramesReceivedCounter = AtomicLong(0L)
+    private val aoaDumlEnvelopesReceivedCounter = AtomicLong(0L)
+    private val aoaVideoEnvelopesReceivedCounter = AtomicLong(0L)
+    private val videoBytesReceivedCounter = AtomicLong(0L)
+
+    private val observedModulesSet = ConcurrentHashMap.newKeySet<String>()
+    private val moduleVersionsMap = ConcurrentHashMap<String, String>()
+
+    @Volatile
+    private var cachedTelemetry = TelemetryState()
+
+    @Volatile
+    private var latestCommandInteraction: String? = null
+
+    @Volatile
+    private var latestDumlPacket: LastDumlPacketInfo? = null
+
+    @Volatile
+    private var latestRawHexPreview: String? = null
+
+    @Volatile
+    private var latestVideoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics()
+
+    @Volatile
+    var isUiVisible: Boolean = false
+        private set
+
+    @Volatile
+    var isDebugStreamActive: Boolean = false
+
+    private var periodicTickerJob: Job? = null
 
     val videoDecoder: H264VideoDecoder = H264VideoDecoder { metrics ->
-        _connectionState.update { currentState ->
-            currentState.copy(videoDecoderMetrics = metrics)
-        }
+        latestVideoDecoderMetrics = metrics
     }
 
     /**
@@ -133,8 +187,10 @@ class UsbAccessoryConnectionManager(
     var isVideoPreviewEnabled: Boolean = false
 
     private val udpBridgeSender: UdpBridgeSender = UdpBridgeSender(applicationContext) { bridgeMetrics ->
-        _connectionState.update { currentState ->
-            currentState.copy(udpBridgeMetrics = bridgeMetrics)
+        if (isUiVisible) {
+            _mainScreenState.update { currentState ->
+                currentState.copy(udpBridgeMetrics = bridgeMetrics)
+            }
         }
     }
 
@@ -184,7 +240,7 @@ class UsbAccessoryConnectionManager(
                     if (permissionGranted && usbAccessory != null) {
                         openAccessoryStream(usbAccessory)
                     } else {
-                        _connectionState.update { currentState ->
+                        _mainScreenState.update { currentState ->
                             currentState.copy(
                                 connectionPhase = ConnectionPhase.ERROR,
                                 statusMessage = "USB accessory permission was denied by the user.",
@@ -207,6 +263,65 @@ class UsbAccessoryConnectionManager(
     }
 
     /**
+     * Handles activity visibility changes. When visible, immediately refreshes UI state
+     * and starts the 1-second ticker. When hidden, pauses ticker and UI state emissions.
+     */
+    fun onUiVisibilityChanged(isVisible: Boolean) {
+        isUiVisible = isVisible
+        if (isVisible) {
+            publishPeriodicMetrics()
+            _telemetryState.value = cachedTelemetry
+            startPeriodicTicker()
+        } else {
+            periodicTickerJob?.cancel()
+            periodicTickerJob = null
+            isDebugStreamActive = false
+        }
+    }
+
+    private fun startPeriodicTicker() {
+        periodicTickerJob?.cancel()
+        periodicTickerJob = managerScope.launch {
+            while (isActive) {
+                delay(1_000L)
+                if (isUiVisible) {
+                    publishPeriodicMetrics()
+                    if (isDebugStreamActive) {
+                        publishDebugState()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun publishPeriodicMetrics() {
+        val bridgeMetrics = udpBridgeSender.getMetricsSnapshot()
+        _mainScreenState.update { currentState ->
+            currentState.copy(
+                videoDecoderMetrics = latestVideoDecoderMetrics,
+                udpBridgeMetrics = bridgeMetrics,
+                hasVideoEnvelopes = aoaVideoEnvelopesReceivedCounter.get() > 0L,
+            )
+        }
+    }
+
+    private fun publishDebugState() {
+        _streamDebugState.value = StreamDebugState(
+            totalBytesReceived = totalBytesReceivedCounter.get(),
+            totalBytesSent = totalBytesSentCounter.get(),
+            dumlFramesReceived = dumlFramesReceivedCounter.get(),
+            aoaDumlEnvelopesReceived = aoaDumlEnvelopesReceivedCounter.get(),
+            aoaVideoEnvelopesReceived = aoaVideoEnvelopesReceivedCounter.get(),
+            videoBytesReceived = videoBytesReceivedCounter.get(),
+            observedModules = observedModulesSet.toSet(),
+            moduleVersions = moduleVersionsMap.toMap(),
+            lastCommandInteraction = latestCommandInteraction,
+            lastDumlPacket = latestDumlPacket,
+            lastRawHexPreview = latestRawHexPreview,
+        )
+    }
+
+    /**
      * Scans `UsbManager.accessoryList` and either opens the stream or requests permission.
      */
     fun scanAndConnect() {
@@ -220,8 +335,8 @@ class UsbAccessoryConnectionManager(
         }
 
         val descriptor = extractDescriptor(usbAccessory)
-        if (activeFileDescriptor != null && _connectionState.value.connectionPhase == ConnectionPhase.CONNECTED) {
-            _connectionState.update { currentState ->
+        if (activeFileDescriptor != null && _mainScreenState.value.connectionPhase == ConnectionPhase.CONNECTED) {
+            _mainScreenState.update { currentState ->
                 currentState.copy(accessoryDescriptor = descriptor)
             }
             return
@@ -230,7 +345,7 @@ class UsbAccessoryConnectionManager(
         if (usbManager.hasPermission(usbAccessory)) {
             openAccessoryStream(usbAccessory)
         } else {
-            _connectionState.update { currentState ->
+            _mainScreenState.update { currentState ->
                 currentState.copy(
                     connectionPhase = ConnectionPhase.AWAITING_PERMISSION,
                     statusMessage = "DJI USB accessory detected (${descriptor.manufacturer} ${descriptor.model}). Requesting USB permission…",
@@ -291,6 +406,8 @@ class UsbAccessoryConnectionManager(
     fun shutdown() {
         isVideoPreviewEnabled = false
         BridgeForegroundService.stop(applicationContext)
+        periodicTickerJob?.cancel()
+        periodicTickerJob = null
         udpBridgeSender.shutdown()
         videoDecoder.shutdown()
         closeActiveStream(statusMessage = "Connection closed.")
@@ -306,14 +423,14 @@ class UsbAccessoryConnectionManager(
 
     private fun openAccessoryStream(usbAccessory: UsbAccessory) {
         val descriptor = extractDescriptor(usbAccessory)
-        if (activeFileDescriptor != null && _connectionState.value.connectionPhase == ConnectionPhase.CONNECTED) {
+        if (activeFileDescriptor != null && _mainScreenState.value.connectionPhase == ConnectionPhase.CONNECTED) {
             return
         }
 
         val parcelFileDescriptor = try {
             usbManager.openAccessory(usbAccessory)
         } catch (exception: Exception) {
-            _connectionState.update { currentState ->
+            _mainScreenState.update { currentState ->
                 currentState.copy(
                     connectionPhase = ConnectionPhase.ERROR,
                     statusMessage = "Failed to open USB accessory: ${exception.message}",
@@ -324,7 +441,7 @@ class UsbAccessoryConnectionManager(
         }
 
         if (parcelFileDescriptor == null) {
-            _connectionState.update { currentState ->
+            _mainScreenState.update { currentState ->
                 currentState.copy(
                     connectionPhase = ConnectionPhase.ERROR,
                     statusMessage = "UsbManager.openAccessory() returned null. Try unplugging and reconnecting the USB cable.",
@@ -340,8 +457,8 @@ class UsbAccessoryConnectionManager(
         val outputStream = FileOutputStream(fileDescriptor)
         activeOutputStream = outputStream
 
-        _connectionState.update { currentState ->
-            ControllerConnectionState(
+        _mainScreenState.update { currentState ->
+            BridgeMainScreenState(
                 connectionPhase = ConnectionPhase.CONNECTED,
                 statusMessage = "Connected to ${descriptor.manufacturer} ${descriptor.model} over Android Open Accessory (AOA).",
                 accessoryDescriptor = descriptor,
@@ -381,17 +498,19 @@ class UsbAccessoryConnectionManager(
                 if (bytesRead == 0) {
                     continue
                 }
-                val previewCopy = readBuffer.copyOfRange(0, minOf(bytesRead, 24))
-                val hexPreview = DumlProtocol.formatHexPreview(previewCopy, maxBytes = 24)
-                streamParser.feedBytes(readBuffer, bytesRead)
+                totalBytesReceivedCounter.addAndGet(bytesRead.toLong())
 
-                _connectionState.update { currentState ->
-                    currentState.copy(
-                        totalBytesReceived = currentState.totalBytesReceived + bytesRead,
-                        aoaDumlEnvelopesReceived = streamParser.aoaDumlEnvelopesReceived,
-                        aoaVideoEnvelopesReceived = streamParser.aoaVideoEnvelopesReceived,
-                        lastRawHexPreview = hexPreview,
-                    )
+                if (isDebugStreamActive) {
+                    val previewCopy = readBuffer.copyOfRange(0, minOf(bytesRead, 24))
+                    latestRawHexPreview = DumlProtocol.formatHexPreview(previewCopy, maxBytes = 24)
+                }
+
+                streamParser.feedBytes(readBuffer, bytesRead)
+                aoaDumlEnvelopesReceivedCounter.set(streamParser.aoaDumlEnvelopesReceived)
+                aoaVideoEnvelopesReceivedCounter.set(streamParser.aoaVideoEnvelopesReceived)
+
+                if (isDebugStreamActive) {
+                    publishDebugState()
                 }
             }
         } catch (exception: IOException) {
@@ -405,27 +524,36 @@ class UsbAccessoryConnectionManager(
 
     private fun handleParsedDumlFrame(frame: DumlFrame) {
         udpBridgeSender.enqueueDumlFrameBytes(DumlProtocol.encodeDumlFrame(frame))
+        dumlFramesReceivedCounter.incrementAndGet()
 
         val sourceLabel = DumlProtocol.formatModuleName(frame.sourceModuleId)
         val destinationLabel = DumlProtocol.formatModuleName(frame.destinationModuleId)
-        val packetInfo = LastDumlPacketInfo(
-            sourceModule = sourceLabel,
-            destinationModule = destinationLabel,
-            commandSetAndId = "Set 0x%02X / ID 0x%02X".format(frame.commandSet, frame.commandId),
-            sequenceAndLength = "#%05d (%3d B)".format(frame.sequenceNumber, frame.payload.size),
-            payloadHex = if (frame.payload.isEmpty()) {
-                "(empty payload)"
-            } else {
-                DumlProtocol.formatHexPreview(frame.payload, maxBytes = 16)
-            },
-        )
+        observedModulesSet.add(sourceLabel)
+
+        val decodedVersion = DumlProtocol.decodeDeviceVersionString(frame)
+        if (decodedVersion != null) {
+            moduleVersionsMap[sourceLabel] = decodedVersion
+        }
+
+        if (isDebugStreamActive) {
+            latestDumlPacket = LastDumlPacketInfo(
+                sourceModule = sourceLabel,
+                destinationModule = destinationLabel,
+                commandSetAndId = "Set 0x%02X / ID 0x%02X".format(frame.commandSet, frame.commandId),
+                sequenceAndLength = "#%05d (%3d B)".format(frame.sequenceNumber, frame.payload.size),
+                payloadHex = if (frame.payload.isEmpty()) {
+                    "(empty payload)"
+                } else {
+                    DumlProtocol.formatHexPreview(frame.payload, maxBytes = 16)
+                },
+            )
+        }
 
         val decodedOsd = DumlProtocol.decodeFlightControllerOsdTelemetry(frame)
         val decodedBattery = DumlProtocol.decodeBatteryTelemetry(frame)
         val decodedAxes = DumlProtocol.decodeRemoteControllerAxes(frame)
         val decodedGimbal = DumlProtocol.decodeGimbalTelemetry(frame)
         val decodedCamera = DumlProtocol.decodeCameraTelemetry(frame)
-        val decodedVersion = DumlProtocol.decodeDeviceVersionString(frame)
 
         if (decodedAxes != null) {
             handleFunctionButtonState(decodedAxes.isFunctionButtonPressed)
@@ -437,7 +565,7 @@ class UsbAccessoryConnectionManager(
         val isRoutineBatteryResponse = frame.commandSet == DumlProtocol.COMMAND_SET_BATTERY &&
             (frame.commandId == DumlProtocol.CMD_BATTERY_DYNAMIC_DATA || frame.commandId == DumlProtocol.CMD_BATTERY_CELL_VOLTAGE)
 
-        val commandInteractionSummary = if (isAcknowledgment && !isRoutineBatteryResponse) {
+        if (isAcknowledgment && !isRoutineBatteryResponse) {
             val resultCodeDescription = if (frame.payload.isNotEmpty()) {
                 "ret 0x%02X".format(frame.payload[0])
             } else {
@@ -454,9 +582,7 @@ class UsbAccessoryConnectionManager(
                 frame.sequenceNumber,
             )
             Log.i(TAG, responseSummary)
-            responseSummary
-        } else {
-            null
+            latestCommandInteraction = responseSummary
         }
 
         val isCameraModeAck = isAcknowledgment &&
@@ -477,45 +603,46 @@ class UsbAccessoryConnectionManager(
             }
         }
 
-        _connectionState.update { currentState ->
-            val updatedModules = currentState.observedModules + sourceLabel
-            val updatedVersions = if (decodedVersion != null) {
-                currentState.moduleVersions + (sourceLabel to decodedVersion)
-            } else {
-                currentState.moduleVersions
+        // Fast-path telemetry equality detection.
+        val currentTelemetrySnapshot = cachedTelemetry
+        val updatedBattery = when {
+            currentTelemetrySnapshot.batteryTelemetry != null && decodedBattery != null -> {
+                currentTelemetrySnapshot.batteryTelemetry.mergeWith(decodedBattery)
             }
-            val updatedBattery = when {
-                currentState.batteryTelemetry != null && decodedBattery != null -> {
-                    currentState.batteryTelemetry.mergeWith(decodedBattery)
-                }
-                decodedBattery != null -> decodedBattery
-                else -> currentState.batteryTelemetry
+            decodedBattery != null -> decodedBattery
+            else -> currentTelemetrySnapshot.batteryTelemetry
+        }
+        val bmsPercentage = updatedBattery?.percentage
+        val effectiveBatteryPercentage = when {
+            bmsPercentage != null && bmsPercentage in 0..100 -> bmsPercentage
+            decodedOsd != null && decodedOsd.batteryPercentage in 1..100 -> decodedOsd.batteryPercentage
+            else -> currentTelemetrySnapshot.flightControllerTelemetry?.batteryPercentage ?: 0
+        }
+        val updatedTelemetry = when {
+            decodedOsd != null -> decodedOsd.copy(batteryPercentage = effectiveBatteryPercentage)
+            effectiveBatteryPercentage > 0 && currentTelemetrySnapshot.flightControllerTelemetry != null -> {
+                currentTelemetrySnapshot.flightControllerTelemetry.copy(batteryPercentage = effectiveBatteryPercentage)
             }
-            val bmsPercentage = updatedBattery?.percentage
-            val effectiveBatteryPercentage = when {
-                bmsPercentage != null && bmsPercentage in 0..100 -> bmsPercentage
-                decodedOsd != null && decodedOsd.batteryPercentage in 1..100 -> decodedOsd.batteryPercentage
-                else -> currentState.flightControllerTelemetry?.batteryPercentage ?: 0
+            else -> currentTelemetrySnapshot.flightControllerTelemetry
+        }
+
+        val newTelemetrySnapshot = currentTelemetrySnapshot.copy(
+            remoteControllerAxes = decodedAxes ?: currentTelemetrySnapshot.remoteControllerAxes,
+            flightControllerTelemetry = updatedTelemetry,
+            batteryTelemetry = updatedBattery,
+            gimbalTelemetry = decodedGimbal ?: currentTelemetrySnapshot.gimbalTelemetry,
+            cameraTelemetry = decodedCamera ?: currentTelemetrySnapshot.cameraTelemetry,
+        )
+
+        if (newTelemetrySnapshot != cachedTelemetry) {
+            cachedTelemetry = newTelemetrySnapshot
+            if (isUiVisible) {
+                _telemetryState.value = newTelemetrySnapshot
             }
-            val updatedTelemetry = when {
-                decodedOsd != null -> decodedOsd.copy(batteryPercentage = effectiveBatteryPercentage)
-                effectiveBatteryPercentage > 0 && currentState.flightControllerTelemetry != null -> {
-                    currentState.flightControllerTelemetry.copy(batteryPercentage = effectiveBatteryPercentage)
-                }
-                else -> currentState.flightControllerTelemetry
-            }
-            currentState.copy(
-                dumlFramesReceived = currentState.dumlFramesReceived + 1,
-                observedModules = updatedModules,
-                moduleVersions = updatedVersions,
-                remoteControllerAxes = decodedAxes ?: currentState.remoteControllerAxes,
-                flightControllerTelemetry = updatedTelemetry,
-                batteryTelemetry = updatedBattery,
-                gimbalTelemetry = decodedGimbal ?: currentState.gimbalTelemetry,
-                cameraTelemetry = decodedCamera ?: currentState.cameraTelemetry,
-                lastDumlPacket = packetInfo,
-                lastCommandInteraction = commandInteractionSummary ?: currentState.lastCommandInteraction,
-            )
+        }
+
+        if (isDebugStreamActive) {
+            publishDebugState()
         }
     }
 
@@ -524,11 +651,7 @@ class UsbAccessoryConnectionManager(
         if (isVideoPreviewEnabled) {
             videoDecoder.feedRawVideoChunk(videoChunk)
         }
-        _connectionState.update { currentState ->
-            currentState.copy(
-                videoBytesReceived = currentState.videoBytesReceived + videoChunk.size,
-            )
-        }
+        videoBytesReceivedCounter.addAndGet(videoChunk.size.toLong())
     }
 
     @Synchronized
@@ -544,7 +667,7 @@ class UsbAccessoryConnectionManager(
         }
         functionButtonAutoLandJob = managerScope.launch {
             delay(FUNCTION_BUTTON_AUTO_LAND_HOLD_MILLIS)
-            val telemetry = _connectionState.value.flightControllerTelemetry
+            val telemetry = cachedTelemetry.flightControllerTelemetry
             if (telemetry?.aircraftInAir == true &&
                 telemetry.flightMode != "AUTO-TAKEOFF" &&
                 !telemetry.isAutoLanding
@@ -553,8 +676,9 @@ class UsbAccessoryConnectionManager(
                 val sequence = sequenceCounter.getAndIncrement() and 0xFFFF
                 val transmissionSummary = "TX: Auto Land (#%05d)".format(sequence)
                 Log.i(TAG, transmissionSummary)
-                _connectionState.update { currentState ->
-                    currentState.copy(lastCommandInteraction = transmissionSummary)
+                latestCommandInteraction = transmissionSummary
+                if (isDebugStreamActive) {
+                    publishDebugState()
                 }
                 val autoLandCommand = DumlProtocol.buildAutoLandCommand(
                     sequenceNumber = sequence,
@@ -574,8 +698,9 @@ class UsbAccessoryConnectionManager(
                 val command = DumlProtocol.buildCameraTakePhotoCommand(sequence)
                 val transmissionSummary = "TX: Camera Take Photo (#%05d)".format(sequence)
                 Log.i(TAG, transmissionSummary)
-                _connectionState.update { currentState ->
-                    currentState.copy(lastCommandInteraction = transmissionSummary)
+                latestCommandInteraction = transmissionSummary
+                if (isDebugStreamActive) {
+                    publishDebugState()
                 }
                 writeBytesToAccessory(command)
             }
@@ -584,8 +709,9 @@ class UsbAccessoryConnectionManager(
                 val command = DumlProtocol.buildCameraStartRecordCommand(sequence)
                 val transmissionSummary = "TX: Camera Start Record (#%05d)".format(sequence)
                 Log.i(TAG, transmissionSummary)
-                _connectionState.update { currentState ->
-                    currentState.copy(lastCommandInteraction = transmissionSummary)
+                latestCommandInteraction = transmissionSummary
+                if (isDebugStreamActive) {
+                    publishDebugState()
                 }
                 writeBytesToAccessory(command)
             }
@@ -604,29 +730,31 @@ class UsbAccessoryConnectionManager(
         }
         isRecordButtonHeld = true
 
-        val isCurrentlyRecording = _connectionState.value.cameraTelemetry?.isRecording == true
+        val isCurrentlyRecording = cachedTelemetry.cameraTelemetry?.isRecording == true
         if (isCurrentlyRecording) {
             pendingCameraAction = PendingCameraAction.NONE
             val sequence = sequenceCounter.getAndIncrement() and 0xFFFF
             val command = DumlProtocol.buildCameraStopRecordCommand(sequence)
             val transmissionSummary = "TX: Camera Stop Record (#%05d)".format(sequence)
             Log.i(TAG, transmissionSummary)
-            _connectionState.update { currentState ->
-                currentState.copy(lastCommandInteraction = transmissionSummary)
+            latestCommandInteraction = transmissionSummary
+            if (isDebugStreamActive) {
+                publishDebugState()
             }
             writeBytesToAccessory(command)
             return
         }
 
-        val currentWorkMode = _connectionState.value.cameraTelemetry?.workMode
+        val currentWorkMode = cachedTelemetry.cameraTelemetry?.workMode
         if (currentWorkMode == DumlProtocol.CAMERA_WORK_MODE_RECORD) {
             pendingCameraAction = PendingCameraAction.NONE
             val sequence = sequenceCounter.getAndIncrement() and 0xFFFF
             val command = DumlProtocol.buildCameraStartRecordCommand(sequence)
             val transmissionSummary = "TX: Camera Start Record (#%05d)".format(sequence)
             Log.i(TAG, transmissionSummary)
-            _connectionState.update { currentState ->
-                currentState.copy(lastCommandInteraction = transmissionSummary)
+            latestCommandInteraction = transmissionSummary
+            if (isDebugStreamActive) {
+                publishDebugState()
             }
             writeBytesToAccessory(command)
         } else {
@@ -638,8 +766,9 @@ class UsbAccessoryConnectionManager(
             )
             val transmissionSummary = "TX: Camera Set Video Mode (#%05d)".format(sequence)
             Log.i(TAG, transmissionSummary)
-            _connectionState.update { currentState ->
-                currentState.copy(lastCommandInteraction = transmissionSummary)
+            latestCommandInteraction = transmissionSummary
+            if (isDebugStreamActive) {
+                publishDebugState()
             }
             writeBytesToAccessory(command)
         }
@@ -656,21 +785,22 @@ class UsbAccessoryConnectionManager(
         }
         isShutterButtonHeld = true
 
-        val isCurrentlyRecording = _connectionState.value.cameraTelemetry?.isRecording == true
+        val isCurrentlyRecording = cachedTelemetry.cameraTelemetry?.isRecording == true
         if (isCurrentlyRecording) {
             Log.w(TAG, "Ignoring shutter button press because video recording is in progress.")
             return
         }
 
-        val currentWorkMode = _connectionState.value.cameraTelemetry?.workMode
+        val currentWorkMode = cachedTelemetry.cameraTelemetry?.workMode
         if (currentWorkMode == DumlProtocol.CAMERA_WORK_MODE_CAPTURE) {
             pendingCameraAction = PendingCameraAction.NONE
             val sequence = sequenceCounter.getAndIncrement() and 0xFFFF
             val command = DumlProtocol.buildCameraTakePhotoCommand(sequence)
             val transmissionSummary = "TX: Camera Take Photo (#%05d)".format(sequence)
             Log.i(TAG, transmissionSummary)
-            _connectionState.update { currentState ->
-                currentState.copy(lastCommandInteraction = transmissionSummary)
+            latestCommandInteraction = transmissionSummary
+            if (isDebugStreamActive) {
+                publishDebugState()
             }
             writeBytesToAccessory(command)
         } else {
@@ -682,8 +812,9 @@ class UsbAccessoryConnectionManager(
             )
             val transmissionSummary = "TX: Camera Set Photo Mode (#%05d)".format(sequence)
             Log.i(TAG, transmissionSummary)
-            _connectionState.update { currentState ->
-                currentState.copy(lastCommandInteraction = transmissionSummary)
+            latestCommandInteraction = transmissionSummary
+            if (isDebugStreamActive) {
+                publishDebugState()
             }
             writeBytesToAccessory(command)
         }
@@ -695,11 +826,7 @@ class UsbAccessoryConnectionManager(
         try {
             outputStream.write(bytes)
             outputStream.flush()
-            _connectionState.update { currentState ->
-                currentState.copy(
-                    totalBytesSent = currentState.totalBytesSent + bytes.size,
-                )
-            }
+            totalBytesSentCounter.addAndGet(bytes.size.toLong())
         } catch (_: IOException) {
             // Stream errors are handled by the reader loop.
         }
@@ -736,7 +863,7 @@ class UsbAccessoryConnectionManager(
                 // Ignore close failures.
             }
         }
-        _connectionState.update { currentState ->
+        _mainScreenState.update { currentState ->
             currentState.copy(
                 connectionPhase = ConnectionPhase.DISCONNECTED,
                 statusMessage = statusMessage,
@@ -750,17 +877,17 @@ class UsbAccessoryConnectionManager(
             setPackage(applicationContext.packageName)
         }
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            PendingIntent.FLAG_MUTABLE
         } else {
-            PendingIntent.FLAG_UPDATE_CURRENT
+            0
         }
-        val permissionPendingIntent = PendingIntent.getBroadcast(
+        val permissionIntent = PendingIntent.getBroadcast(
             applicationContext,
             0,
             explicitIntent,
             flags,
         )
-        usbManager.requestPermission(usbAccessory, permissionPendingIntent)
+        usbManager.requestPermission(usbAccessory, permissionIntent)
     }
 
     private fun registerUsbReceiver() {
@@ -780,31 +907,27 @@ class UsbAccessoryConnectionManager(
 
     private fun extractDescriptor(usbAccessory: UsbAccessory): UsbAccessoryDescriptor {
         return UsbAccessoryDescriptor(
-            manufacturer = usbAccessory.manufacturer ?: "Unknown",
-            model = usbAccessory.model ?: "Unknown",
-            description = usbAccessory.description ?: "None",
-            version = usbAccessory.version ?: "None",
-            uri = usbAccessory.uri ?: "None",
-            serial = try {
-                usbAccessory.serial ?: "Unavailable"
-            } catch (_: SecurityException) {
-                "Requires USB Permission"
-            },
+            manufacturer = usbAccessory.manufacturer.orEmpty(),
+            model = usbAccessory.model.orEmpty(),
+            description = usbAccessory.description.orEmpty(),
+            version = usbAccessory.version.orEmpty(),
+            uri = usbAccessory.uri.orEmpty(),
+            serial = usbAccessory.serial.orEmpty(),
         )
     }
 
+    @Suppress("DEPRECATION")
     private fun extractAccessoryFromIntent(intent: Intent): UsbAccessory? {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getParcelableExtra(UsbManager.EXTRA_ACCESSORY, UsbAccessory::class.java)
         } else {
-            @Suppress("DEPRECATION")
             intent.getParcelableExtra(UsbManager.EXTRA_ACCESSORY)
         }
     }
 
     companion object {
-        private const val TAG: String = "BridgeDuml"
+        private const val TAG = "UsbAccessoryManager"
         private const val ACTION_USB_PERMISSION = "one.woodbury.drone.bridge.USB_PERMISSION"
-        private const val FUNCTION_BUTTON_AUTO_LAND_HOLD_MILLIS: Long = 2_000L
+        private const val FUNCTION_BUTTON_AUTO_LAND_HOLD_MILLIS = 2_000L
     }
 }
