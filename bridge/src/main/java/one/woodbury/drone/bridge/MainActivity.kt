@@ -27,6 +27,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -43,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,6 +62,7 @@ import one.woodbury.drone.bridge.usb.UsbAccessoryConnectionManager
 import one.woodbury.drone.bridge.usb.UsbAccessoryDescriptor
 import one.woodbury.drone.flight.FlightDynamicsCalculator
 import one.woodbury.drone.protocol.DumlProtocol
+import one.woodbury.drone.protocol.RemoteControllerAxes
 import one.woodbury.drone.video.H264VideoDecoder
 
 /**
@@ -70,7 +74,7 @@ enum class BridgeScreen {
 }
 
 /**
- * Main diagnostic activity for connecting to the DJI S01A remote controller over USB AOA
+ * Main diagnostic activity for connecting to the remote controller over USB AOA
  * and displaying hardware descriptor and DUML protocol telemetry.
  */
 class MainActivity : ComponentActivity() {
@@ -198,9 +202,9 @@ fun ControllerDiagnosticsScreen(
             onSetVideoPreviewEnabled = onSetVideoPreviewEnabled,
         )
 
-        UsbDescriptorCard(descriptor = mainState.accessoryDescriptor)
+        ControllerTelemetryCard(axes = telemetryState.remoteControllerAxes)
 
-        TelemetryDetailsCard(state = telemetryState)
+        AircraftTelemetryCard(state = telemetryState)
 
         OutlinedButton(
             onClick = onOpenDebugClicked,
@@ -227,10 +231,13 @@ fun StreamDebugScreen(
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            OutlinedButton(onClick = onBackClicked) {
-                Text(text = "← Back")
+            IconButton(onClick = onBackClicked) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_arrow_back),
+                    contentDescription = "Navigate back",
+                )
             }
             Text(
                 text = "Stream Debugger",
@@ -238,6 +245,8 @@ fun StreamDebugScreen(
                 fontWeight = FontWeight.Bold,
             )
         }
+
+        UsbDescriptorCard(descriptor = state.accessoryDescriptor)
 
         StreamMetricsCard(state = state)
 
@@ -616,8 +625,6 @@ private fun LastCommandInteractionCard(interaction: String?) {
 
 @Composable
 private fun LastDumlPacketCard(packet: LastDumlPacketInfo?) {
-    var isPayloadHexExpanded by rememberSaveable { mutableStateOf(false) }
-
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -645,95 +652,51 @@ private fun LastDumlPacketCard(packet: LastDumlPacketInfo?) {
                 label = "Seq / Length",
                 value = packet?.sequenceAndLength ?: "—",
             )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { isPayloadHexExpanded = !isPayloadHexExpanded },
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "Payload (Hex)",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = if (isPayloadHexExpanded) "Hide ▲" else "Show ▼",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            if (isPayloadHexExpanded) {
-                Text(
-                    text = packet?.payloadHex ?: "Waiting for DUML frames…",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+            KeyValueItem(
+                label = "Payload (Hex)",
+                value = packet?.payloadHex ?: "Waiting for DUML frames…",
+            )
         }
     }
 }
 
 @Composable
 private fun LastRawUsbReadCard(hexPreview: String?) {
-    var isRawHexExpanded by rememberSaveable { mutableStateOf(false) }
-
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { isRawHexExpanded = !isRawHexExpanded },
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "Last Raw USB Read (Hex)",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = if (isRawHexExpanded) "Hide ▲" else "Show ▼",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            if (isRawHexExpanded) {
-                HorizontalDivider()
-                Text(
-                    text = hexPreview ?: "No bytes read yet.",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TelemetryDetailsCard(state: TelemetryState) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = "Controller & Aircraft Telemetry",
+                text = "Last Raw USB Read (Hex)",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            HorizontalDivider()
+            Text(
+                text = hexPreview ?: "No bytes read yet.",
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ControllerTelemetryCard(axes: RemoteControllerAxes?) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Controller Telemetry",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
             HorizontalDivider()
 
-            val axes = state.remoteControllerAxes
             if (axes != null) {
                 Text(
                     text = "Remote Controller Inputs (Center = 1024)",
@@ -764,8 +727,34 @@ private fun TelemetryDetailsCard(state: TelemetryState) {
                     label = "Shutter Button",
                     value = if (axes.isShutterButtonPressed) "Pressed" else "Released",
                 )
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                KeyValueItem(
+                    label = "Customizable Button",
+                    value = if (axes.isCButtonPressed) "Pressed" else "Released",
+                )
+            } else {
+                Text(
+                    text = "Telemetry is not currently available.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun AircraftTelemetryCard(state: TelemetryState) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Aircraft Telemetry",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            HorizontalDivider()
 
             val telemetry = state.flightControllerTelemetry
             val battery = state.batteryTelemetry
@@ -773,11 +762,6 @@ private fun TelemetryDetailsCard(state: TelemetryState) {
             val camera = state.cameraTelemetry
             val batteryPercentage = battery?.percentage ?: telemetry?.batteryPercentage?.takeIf { it > 0 }
             if (telemetry != null || battery != null || gimbal != null || camera != null) {
-                Text(
-                    text = "Aircraft OSD Telemetry",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
                 KeyValueItem(
                     label = "Battery",
                     value = if (batteryPercentage != null) "$batteryPercentage%" else "—",
@@ -911,9 +895,9 @@ private fun TelemetryDetailsCard(state: TelemetryState) {
                         value = "Motors=${telemetry.motorsRunning}, InAir=${telemetry.aircraftInAir}",
                     )
                 }
-            } else if (axes == null) {
+            } else {
                 Text(
-                    text = "Waiting for controller or aircraft telemetry frames…",
+                    text = "Telemetry is not currently available.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -955,7 +939,7 @@ fun ControllerDiagnosticsScreenPreview() {
         ControllerDiagnosticsScreen(
             mainState = BridgeMainScreenState(
                 connectionPhase = ConnectionPhase.CONNECTED,
-                statusMessage = "Connected to DJI T600 over Android Open Accessory (AOA).",
+                statusMessage = "Connected to remote controller over Android Open Accessory (AOA).",
                 accessoryDescriptor = UsbAccessoryDescriptor(
                     manufacturer = "DJI",
                     model = "T600",

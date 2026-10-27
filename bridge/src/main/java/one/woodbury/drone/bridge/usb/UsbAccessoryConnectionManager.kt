@@ -82,7 +82,7 @@ data class LastDumlPacketInfo(
  */
 data class BridgeMainScreenState(
     val connectionPhase: ConnectionPhase = ConnectionPhase.DISCONNECTED,
-    val statusMessage: String = "No USB accessory connected. Unplug the side slider cable on the S01A remote and connect its bottom USB-A port to this phone.",
+    val statusMessage: String = "No USB accessory connected. Unplug the side slider cable on the remote controller and connect its bottom USB-A port to this phone.",
     val accessoryDescriptor: UsbAccessoryDescriptor? = null,
     val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
     val udpBridgeMetrics: UdpBridgeSenderMetrics = UdpBridgeSenderMetrics(),
@@ -104,6 +104,7 @@ data class TelemetryState(
  * Detailed diagnostic state displayed on the stream debugger screen at live stream frequency.
  */
 data class StreamDebugState(
+    val accessoryDescriptor: UsbAccessoryDescriptor? = null,
     val totalBytesReceived: Long = 0L,
     val totalBytesSent: Long = 0L,
     val dumlFramesReceived: Long = 0L,
@@ -165,6 +166,9 @@ class UsbAccessoryConnectionManager(
 
     @Volatile
     private var latestVideoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics()
+
+    @Volatile
+    private var currentAccessoryDescriptor: UsbAccessoryDescriptor? = null
 
     @Volatile
     var isUiVisible: Boolean = false
@@ -307,6 +311,7 @@ class UsbAccessoryConnectionManager(
 
     private fun publishDebugState() {
         _streamDebugState.value = StreamDebugState(
+            accessoryDescriptor = currentAccessoryDescriptor,
             totalBytesReceived = totalBytesReceivedCounter.get(),
             totalBytesSent = totalBytesSentCounter.get(),
             dumlFramesReceived = dumlFramesReceivedCounter.get(),
@@ -329,12 +334,13 @@ class UsbAccessoryConnectionManager(
         val usbAccessory = accessoryList?.firstOrNull()
         if (usbAccessory == null) {
             closeActiveStream(
-                statusMessage = "No USB accessory detected on the bus. Ensure the S01A remote is powered on and its left-side short cable is unplugged.",
+                statusMessage = "No USB accessory detected on the bus. Ensure the remote controller is powered on and its left-side short cable is unplugged.",
             )
             return
         }
 
         val descriptor = extractDescriptor(usbAccessory)
+        currentAccessoryDescriptor = descriptor
         if (activeFileDescriptor != null && _mainScreenState.value.connectionPhase == ConnectionPhase.CONNECTED) {
             _mainScreenState.update { currentState ->
                 currentState.copy(accessoryDescriptor = descriptor)
@@ -348,7 +354,7 @@ class UsbAccessoryConnectionManager(
             _mainScreenState.update { currentState ->
                 currentState.copy(
                     connectionPhase = ConnectionPhase.AWAITING_PERMISSION,
-                    statusMessage = "DJI USB accessory detected (${descriptor.manufacturer} ${descriptor.model}). Requesting USB permission…",
+                    statusMessage = "DJI USB accessory detected. Requesting USB permission…",
                     accessoryDescriptor = descriptor,
                 )
             }
@@ -457,10 +463,11 @@ class UsbAccessoryConnectionManager(
         val outputStream = FileOutputStream(fileDescriptor)
         activeOutputStream = outputStream
 
+        currentAccessoryDescriptor = descriptor
         _mainScreenState.update { currentState ->
             BridgeMainScreenState(
                 connectionPhase = ConnectionPhase.CONNECTED,
-                statusMessage = "Connected to ${descriptor.manufacturer} ${descriptor.model} over Android Open Accessory (AOA).",
+                statusMessage = "Connected to remote controller over Android Open Accessory (AOA).",
                 accessoryDescriptor = descriptor,
                 videoDecoderMetrics = currentState.videoDecoderMetrics,
                 udpBridgeMetrics = currentState.udpBridgeMetrics,
@@ -863,10 +870,12 @@ class UsbAccessoryConnectionManager(
                 // Ignore close failures.
             }
         }
+        currentAccessoryDescriptor = null
         _mainScreenState.update { currentState ->
             currentState.copy(
                 connectionPhase = ConnectionPhase.DISCONNECTED,
                 statusMessage = statusMessage,
+                accessoryDescriptor = null,
             )
         }
         BridgeForegroundService.stop(applicationContext)

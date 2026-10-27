@@ -68,6 +68,10 @@ class BridgeOptimizationStateTest {
         val movedAxes = initialAxes.copy(leftStickHorizontal = 1150)
         val changedTelemetry = initialTelemetry.copy(remoteControllerAxes = movedAxes)
         assertNotEquals(initialTelemetry, changedTelemetry)
+
+        val cButtonPressedAxes = initialAxes.copy(isCButtonPressed = true)
+        val cButtonPressedTelemetry = initialTelemetry.copy(remoteControllerAxes = cButtonPressedAxes)
+        assertNotEquals(initialTelemetry, cButtonPressedTelemetry)
     }
 
     @Test
