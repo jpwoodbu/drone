@@ -26,6 +26,19 @@ class HudCalculatorTest {
     }
 
     @Test
+    fun unwrapTargetHeadingDegrees_appliesDeadbandThreshold() {
+        val base = 90.0f
+        // Small fluctuations under the deadband (0.25°) should return unchanged.
+        assertEquals(base, HudCalculator.unwrapTargetHeadingDegrees(base, 90.1f, deadbandDegrees = 0.25f), 0.001f)
+        assertEquals(base, HudCalculator.unwrapTargetHeadingDegrees(base, 89.9f, deadbandDegrees = 0.25f), 0.001f)
+        assertEquals(base, HudCalculator.unwrapTargetHeadingDegrees(base, 90.24f, deadbandDegrees = 0.25f), 0.001f)
+
+        // Changes meeting or exceeding threshold should update.
+        assertEquals(90.25f, HudCalculator.unwrapTargetHeadingDegrees(base, 90.25f, deadbandDegrees = 0.25f), 0.001f)
+        assertEquals(89.7f, HudCalculator.unwrapTargetHeadingDegrees(base, 89.7f, deadbandDegrees = 0.25f), 0.001f)
+    }
+
+    @Test
     fun formatHeadingTickLabel_formatsCardinalsAndTwoDigitNumbers() {
         assertEquals("N", HudCalculator.formatHeadingTickLabel(0))
         assertEquals("N", HudCalculator.formatHeadingTickLabel(360))

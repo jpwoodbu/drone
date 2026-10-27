@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import one.woodbury.drone.flight.FlightDynamicsCalculator
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
@@ -65,18 +66,32 @@ object HudCalculator {
     }
 
     /**
+     * Minimum angular delta in degrees required to update the heading tape target, deadbanding sub-degree jitter.
+     */
+    const val HEADING_DEADBAND_DEGREES = 0.25f
+
+    /**
      * Advances a continuous unwrapped heading angle in degrees by the shortest angular delta
      * (`[-180.0, 180.0]`) to [newHeadingDegrees], preventing `360°` spin-back when animating
      * across North (`0° / 360°`).
+     *
+     * If the angular change from [previousUnwrappedDegrees] is within [deadbandDegrees],
+     * returns [previousUnwrappedDegrees] unchanged to filter sensor noise.
      */
     fun unwrapTargetHeadingDegrees(
         previousUnwrappedDegrees: Float,
         newHeadingDegrees: Float,
+        deadbandDegrees: Float = 0f,
     ): Float {
-        return previousUnwrappedDegrees + shortestAngularDeltaDegrees(
+        val delta = shortestAngularDeltaDegrees(
             centerDegrees = previousUnwrappedDegrees,
             targetDegrees = newHeadingDegrees,
         )
+        return if (abs(delta) >= deadbandDegrees) {
+            previousUnwrappedDegrees + delta
+        } else {
+            previousUnwrappedDegrees
+        }
     }
 
     /**
@@ -487,7 +502,11 @@ private fun HeadingTape(
     val currentTargetHeading = if (headingDegrees != null) {
         val previous = unwrappedTargetHeading
         val next = if (previous != null) {
-            HudCalculator.unwrapTargetHeadingDegrees(previous, headingDegrees)
+            HudCalculator.unwrapTargetHeadingDegrees(
+                previousUnwrappedDegrees = previous,
+                newHeadingDegrees = headingDegrees,
+                deadbandDegrees = HudCalculator.HEADING_DEADBAND_DEGREES,
+            )
         } else {
             headingDegrees
         }
