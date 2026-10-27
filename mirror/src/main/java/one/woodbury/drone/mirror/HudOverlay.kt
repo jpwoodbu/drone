@@ -45,8 +45,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import one.woodbury.drone.flight.FlightDynamicsCalculator
 import kotlin.math.abs
-import kotlin.math.ceil
-import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /**
@@ -95,18 +93,12 @@ object HudCalculator {
     }
 
     /**
-     * Formats a major compass tick (every 10 degrees) using cardinal letters (`N`, `E`, `S`, `W`)
-     * or 2-digit aviation heading numbers (`01` through `35`).
+     * Formats a major compass tick (every 10 degrees) as a 3-digit degree heading string (`010` through `360`).
      */
     fun formatHeadingTickLabel(degrees: Int): String {
         val normalized = ((degrees % 360) + 360) % 360
-        return when (normalized) {
-            0 -> "N"
-            90 -> "E"
-            180 -> "S"
-            270 -> "W"
-            else -> "%02d".format(normalized / 10)
-        }
+        val displayDegrees = if (normalized == 0) 360 else normalized
+        return "%03d".format(displayDegrees)
     }
 
     /**
@@ -232,11 +224,6 @@ fun HudOverlay(
     } else {
         null
     }
-    val headingBoxText = if (telemetry != null) {
-        FlightDynamicsCalculator.formatCompassHeading(telemetry.yawDegrees)
-    } else {
-        "—"
-    }
 
     val batteryPercentage = state.batteryTelemetry?.percentage
         ?: telemetry?.batteryPercentage?.takeIf { it > 0 }
@@ -284,7 +271,7 @@ fun HudOverlay(
         Box(
             modifier = Modifier
                 .fillMaxHeight()
-                .aspectRatio(1.1f)
+                .aspectRatio(0.95f)
                 .padding(16.dp),
         ) {
             // Top-Center: Heading tape and active alert banner.
@@ -294,7 +281,6 @@ fun HudOverlay(
             ) {
                 HeadingTape(
                     headingDegrees = headingDegrees,
-                    headingBoxText = headingBoxText,
                     hudColor = hudColor,
                     boxBackgroundColor = boxBackgroundColor,
                 )
@@ -332,17 +318,16 @@ fun HudOverlay(
                 modifier = Modifier.align(Alignment.Center),
             )
 
-            // Left-Center: Vertical speed tape.
-            SpeedTape(
+            // Left-Center: Ground speed readout box.
+            SpeedBox(
                 groundSpeedMetersPerSecond = groundSpeedMetersPerSecond,
                 unitSystem = state.unitSystem,
                 hudColor = hudColor,
-                boxBackgroundColor = boxBackgroundColor,
                 onClick = onToggleUnitSystem,
                 modifier = Modifier.align(Alignment.CenterStart),
             )
 
-            // Right-Center: Vertical altitude tape and vertical speed readout.
+            // Right-Center: Altitude readout box and vertical speed readout.
             Column(
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -353,12 +338,11 @@ fun HudOverlay(
                 } else {
                     hudColor
                 }
-                AltitudeTape(
+                AltitudeBox(
                     altitudeMeters = effectiveAltitudeMeters,
                     unitSystem = state.unitSystem,
                     hudColor = hudColor,
                     readoutColor = altitudeColor,
-                    boxBackgroundColor = boxBackgroundColor,
                     onClick = onToggleUnitSystem,
                 )
                 HudDataRow(
@@ -477,12 +461,11 @@ private fun VelocityVectorSymbol(
 }
 
 /**
- * Horizontal scrolling compass heading tape with cardinal/numeric ticks and a center digital readout box.
+ * Horizontal scrolling compass heading tape with numeric ticks and a center lubber line.
  */
 @Composable
 private fun HeadingTape(
     headingDegrees: Float?,
-    headingBoxText: String,
     hudColor: Color,
     boxBackgroundColor: Color,
     modifier: Modifier = Modifier,
@@ -535,7 +518,7 @@ private fun HeadingTape(
     ) {
         Box(
             modifier = Modifier
-                .width(240.dp)
+                .width(280.dp)
                 .height(34.dp)
                 .background(boxBackgroundColor, RoundedCornerShape(2.dp))
                 .clipToBounds(),
@@ -545,7 +528,7 @@ private fun HeadingTape(
                 val bottomY = size.height - 2.dp.toPx()
                 val majorTickHeight = 8.dp.toPx()
                 val minorTickHeight = 4.dp.toPx()
-                val halfSpanDegrees = 35f
+                val halfSpanDegrees = 15f
 
                 // Baseline across the bottom of the heading tape.
                 drawLine(
@@ -563,7 +546,7 @@ private fun HeadingTape(
                 val pixelsPerDegree = size.width / (halfSpanDegrees * 2f)
                 val baseFive = (centerHeading / 5f).roundToInt() * 5
 
-                for (offsetStep in -8..8) {
+                for (offsetStep in -4..4) {
                     val tickDegrees = baseFive + offsetStep * 5
                     val deltaDegrees = HudCalculator.shortestAngularDeltaDegrees(
                         centerHeading,
@@ -596,171 +579,61 @@ private fun HeadingTape(
         }
 
         // Lubber caret pointing up at the center of the heading tape.
-        Canvas(modifier = Modifier.size(width = 12.dp, height = 6.dp)) {
+        Canvas(
+            modifier = Modifier
+                .padding(top = 4.dp)
+                .size(width = 12.dp, height = 6.dp),
+        ) {
             val path = Path().apply {
-                moveTo(size.width / 2f, 0f)
-                lineTo(0f, size.height)
+                moveTo(0f, size.height)
+                lineTo(size.width / 2f, 0f)
                 lineTo(size.width, size.height)
-                close()
             }
             drawPath(path = path, color = hudColor, style = Stroke(width = 1.5.dp.toPx()))
-        }
-
-        // Digital heading readout box.
-        Box(
-            modifier = Modifier
-                .background(boxBackgroundColor, RoundedCornerShape(2.dp))
-                .border(1.5.dp, hudColor, RoundedCornerShape(2.dp))
-                .padding(horizontal = 8.dp, vertical = 1.dp),
-        ) {
-            Text(
-                text = headingBoxText,
-                fontSize = 13.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = hudColor,
-            )
         }
     }
 }
 
 /**
- * Vertical scrolling ground speed tape on the left side of the HUD.
+ * Ground speed readout box with value and unit displayed inside.
  */
 @Composable
-private fun SpeedTape(
+private fun SpeedBox(
     groundSpeedMetersPerSecond: Float?,
     unitSystem: UnitSystem,
     hudColor: Color,
-    boxBackgroundColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val density = LocalDensity.current
-    val textSizePx = with(density) { 10.sp.toPx() }
-    val textPaint = remember(hudColor, textSizePx) {
-        Paint().apply {
-            isAntiAlias = true
-            color = hudColor.toArgb()
-            textSize = textSizePx
-            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
-            textAlign = Paint.Align.RIGHT
-        }
-    }
-
-    val animatedSpeedMetersPerSecond by animateFloatAsState(
-        targetValue = groundSpeedMetersPerSecond ?: 0f,
-        animationSpec = tween(
-            durationMillis = HUD_TAPE_INTERPOLATION_MILLIS,
-            easing = LinearEasing,
-        ),
-        label = "speedTapeMetersPerSecond",
-    )
-    val displaySpeed = if (groundSpeedMetersPerSecond != null) {
-        HudCalculator.convertSpeedToDisplayUnits(animatedSpeedMetersPerSecond, unitSystem)
-    } else {
-        null
-    }
     val readoutText = if (groundSpeedMetersPerSecond != null) {
         HudCalculator.formatSpeedBoxValue(groundSpeedMetersPerSecond, unitSystem)
     } else {
         "—"
     }
-
-    val minorStep = if (unitSystem == UnitSystem.METRIC) 1 else 2
-    val majorStep = if (unitSystem == UnitSystem.METRIC) 5 else 10
-    val halfSpanUnits = if (unitSystem == UnitSystem.METRIC) 12f else 24f
+    val unitText = if (unitSystem.isImperial) "MPH" else "M/S"
 
     Box(
-        contentAlignment = Alignment.CenterStart,
         modifier = modifier
-            .width(68.dp)
-            .height(210.dp)
             .clip(RoundedCornerShape(2.dp))
-            .clickable(onClick = onClick),
+            .background(Color.Black.copy(alpha = 0.85f))
+            .border(1.5.dp, hudColor, RoundedCornerShape(2.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
     ) {
-        Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(boxBackgroundColor)
-                .clipToBounds(),
-        ) {
-            val strokeWidthPx = 1.5.dp.toPx()
-            val spineX = size.width - 2.dp.toPx()
-            val majorTickWidth = 10.dp.toPx()
-            val minorTickWidth = 5.dp.toPx()
-
-            // Vertical spine along the right edge of the speed tape.
-            drawLine(
-                color = hudColor,
-                start = Offset(spineX, 0f),
-                end = Offset(spineX, size.height),
-                strokeWidth = strokeWidthPx,
-            )
-
-            val centerValue = displaySpeed ?: 0f
-            val pixelsPerUnit = size.height / (halfSpanUnits * 2f)
-            val minTick = (floor((centerValue - halfSpanUnits) / minorStep).toInt() * minorStep)
-                .coerceAtLeast(0)
-            val maxTick = ceil((centerValue + halfSpanUnits) / minorStep).toInt() * minorStep
-
-            var tick = minTick
-            while (tick <= maxTick) {
-                val delta = tick - centerValue
-                val y = (size.height / 2f) - delta * pixelsPerUnit
-                if (y in 0f..size.height) {
-                    val isMajor = tick % majorStep == 0
-                    val tickWidth = if (isMajor) majorTickWidth else minorTickWidth
-                    drawLine(
-                        color = hudColor,
-                        start = Offset(spineX - tickWidth, y),
-                        end = Offset(spineX, y),
-                        strokeWidth = strokeWidthPx,
-                    )
-                    if (isMajor && displaySpeed != null) {
-                        drawContext.canvas.nativeCanvas.drawText(
-                            tick.toString(),
-                            spineX - majorTickWidth - 4.dp.toPx(),
-                            y + (textSizePx * 0.35f),
-                            textPaint,
-                        )
-                    }
-                }
-                tick += minorStep
-            }
-        }
-
-        // Speed unit on the outer edge.
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(start = 4.dp, top = 4.dp)
-                .background(boxBackgroundColor, RoundedCornerShape(2.dp))
-                .border(1.dp, hudColor.copy(alpha = 0.6f), RoundedCornerShape(2.dp))
-                .padding(horizontal = 4.dp, vertical = 2.dp),
-        ) {
-            Text(
-                text = if (unitSystem.isImperial) "MPH" else "M/S",
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = hudColor,
-            )
-        }
-
-        // Fixed center digital speed box.
-        Box(
-            contentAlignment = Alignment.CenterEnd,
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(end = 6.dp)
-                .background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(2.dp))
-                .border(1.5.dp, hudColor, RoundedCornerShape(2.dp))
-                .padding(horizontal = 6.dp, vertical = 2.dp),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
                 text = readoutText,
                 fontSize = 13.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                color = hudColor,
+            )
+            Text(
+                text = unitText,
+                fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 color = hudColor,
@@ -770,142 +643,46 @@ private fun SpeedTape(
 }
 
 /**
- * Vertical scrolling altitude tape on the right side of the HUD.
+ * Altitude readout box with value and unit displayed inside.
  */
 @Composable
-private fun AltitudeTape(
+private fun AltitudeBox(
     altitudeMeters: Float?,
     unitSystem: UnitSystem,
     hudColor: Color,
     readoutColor: Color,
-    boxBackgroundColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val density = LocalDensity.current
-    val textSizePx = with(density) { 10.sp.toPx() }
-    val textPaint = remember(hudColor, textSizePx) {
-        Paint().apply {
-            isAntiAlias = true
-            color = hudColor.toArgb()
-            textSize = textSizePx
-            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
-            textAlign = Paint.Align.LEFT
-        }
-    }
-
-    val animatedAltitudeMeters by animateFloatAsState(
-        targetValue = altitudeMeters ?: 0f,
-        animationSpec = tween(
-            durationMillis = HUD_TAPE_INTERPOLATION_MILLIS,
-            easing = LinearEasing,
-        ),
-        label = "altitudeTapeMeters",
-    )
-    val displayAltitude = if (altitudeMeters != null) {
-        HudCalculator.convertAltitudeToDisplayUnits(animatedAltitudeMeters, unitSystem)
-    } else {
-        null
-    }
     val readoutText = if (altitudeMeters != null) {
         HudCalculator.formatAltitudeBoxValue(altitudeMeters, unitSystem)
     } else {
         "—"
     }
-
-    val minorStep = if (unitSystem == UnitSystem.METRIC) 2 else 10
-    val majorStep = if (unitSystem == UnitSystem.METRIC) 10 else 50
-    val halfSpanUnits = if (unitSystem == UnitSystem.METRIC) 25f else 100f
+    val unitText = if (unitSystem.isImperial) "FT" else "M"
 
     Box(
-        contentAlignment = Alignment.CenterEnd,
         modifier = modifier
-            .width(74.dp)
-            .height(210.dp)
             .clip(RoundedCornerShape(2.dp))
-            .clickable(onClick = onClick),
+            .background(Color.Black.copy(alpha = 0.85f))
+            .border(1.5.dp, readoutColor, RoundedCornerShape(2.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
     ) {
-        Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(boxBackgroundColor)
-                .clipToBounds(),
-        ) {
-            val strokeWidthPx = 1.5.dp.toPx()
-            val spineX = 2.dp.toPx()
-            val majorTickWidth = 10.dp.toPx()
-            val minorTickWidth = 5.dp.toPx()
-
-            // Vertical spine along the left edge of the altitude tape.
-            drawLine(
-                color = hudColor,
-                start = Offset(spineX, 0f),
-                end = Offset(spineX, size.height),
-                strokeWidth = strokeWidthPx,
-            )
-
-            val centerValue = displayAltitude ?: 0f
-            val pixelsPerUnit = size.height / (halfSpanUnits * 2f)
-            val minTick = floor((centerValue - halfSpanUnits) / minorStep).toInt() * minorStep
-            val maxTick = ceil((centerValue + halfSpanUnits) / minorStep).toInt() * minorStep
-
-            var tick = minTick
-            while (tick <= maxTick) {
-                val delta = tick - centerValue
-                val y = (size.height / 2f) - delta * pixelsPerUnit
-                if (y in 0f..size.height) {
-                    val isMajor = tick % majorStep == 0
-                    val tickWidth = if (isMajor) majorTickWidth else minorTickWidth
-                    drawLine(
-                        color = hudColor,
-                        start = Offset(spineX, y),
-                        end = Offset(spineX + tickWidth, y),
-                        strokeWidth = strokeWidthPx,
-                    )
-                    if (isMajor && displayAltitude != null) {
-                        drawContext.canvas.nativeCanvas.drawText(
-                            tick.toString(),
-                            spineX + majorTickWidth + 4.dp.toPx(),
-                            y + (textSizePx * 0.35f),
-                            textPaint,
-                        )
-                    }
-                }
-                tick += minorStep
-            }
-        }
-
-        // Altitude unit on the outer edge.
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(end = 4.dp, top = 4.dp)
-                .background(boxBackgroundColor, RoundedCornerShape(2.dp))
-                .border(1.dp, hudColor.copy(alpha = 0.6f), RoundedCornerShape(2.dp))
-                .padding(horizontal = 4.dp, vertical = 2.dp),
-        ) {
-            Text(
-                text = if (unitSystem.isImperial) "FT" else "M",
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = hudColor,
-            )
-        }
-
-        // Fixed center digital altitude box.
-        Box(
-            contentAlignment = Alignment.CenterStart,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(start = 6.dp)
-                .background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(2.dp))
-                .border(1.5.dp, readoutColor, RoundedCornerShape(2.dp))
-                .padding(horizontal = 6.dp, vertical = 2.dp),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
                 text = readoutText,
                 fontSize = 13.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                color = readoutColor,
+            )
+            Text(
+                text = unitText,
+                fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 color = readoutColor,

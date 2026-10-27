@@ -39,15 +39,15 @@ class HudCalculatorTest {
     }
 
     @Test
-    fun formatHeadingTickLabel_formatsCardinalsAndTwoDigitNumbers() {
-        assertEquals("N", HudCalculator.formatHeadingTickLabel(0))
-        assertEquals("N", HudCalculator.formatHeadingTickLabel(360))
-        assertEquals("03", HudCalculator.formatHeadingTickLabel(30))
-        assertEquals("E", HudCalculator.formatHeadingTickLabel(90))
-        assertEquals("12", HudCalculator.formatHeadingTickLabel(120))
-        assertEquals("S", HudCalculator.formatHeadingTickLabel(180))
-        assertEquals("W", HudCalculator.formatHeadingTickLabel(270))
-        assertEquals("33", HudCalculator.formatHeadingTickLabel(-30))
+    fun formatHeadingTickLabel_formatsThreeDigitHeadingNumbers() {
+        assertEquals("360", HudCalculator.formatHeadingTickLabel(0))
+        assertEquals("360", HudCalculator.formatHeadingTickLabel(360))
+        assertEquals("030", HudCalculator.formatHeadingTickLabel(30))
+        assertEquals("090", HudCalculator.formatHeadingTickLabel(90))
+        assertEquals("120", HudCalculator.formatHeadingTickLabel(120))
+        assertEquals("180", HudCalculator.formatHeadingTickLabel(180))
+        assertEquals("270", HudCalculator.formatHeadingTickLabel(270))
+        assertEquals("330", HudCalculator.formatHeadingTickLabel(-30))
     }
 
     @Test
