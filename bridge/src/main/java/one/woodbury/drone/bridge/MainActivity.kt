@@ -125,7 +125,7 @@ fun ControllerDiagnosticsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            text = "Mavic Air Bridge",
+            text = "Drone Bridge",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
         )
