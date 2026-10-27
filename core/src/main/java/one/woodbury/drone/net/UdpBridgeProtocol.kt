@@ -14,17 +14,17 @@ import java.nio.ByteOrder
  * Defines the lightweight UDP framing protocol used between the Phone Bridge (`:bridge`)
  * and the Meta Quest 2 Viewer (`:mirror`) on UDP port [UDP_BRIDGE_PORT].
  *
- * - Viewer Discovery Heartbeat (`"DJIH"`): 4-byte ASCII magic sent by the Quest 2 every 1,000 ms
+ * - Viewer Discovery Heartbeat (`"DBHB"`): 4-byte ASCII magic sent by the Quest 2 every 1,000 ms
  *   to the subnet broadcast address (`x.x.x.255:5600`), default gateway, and known phone IP.
  *   The phone records the sender IPv4 address as an active subscriber.
- * - Bridge Discovery Announce (`"DJIB"`): 4-byte ASCII magic broadcast by the phone every 1,000 ms
- *   to the subnet broadcast address (`x.x.x.255:5600`). When the Quest 2 receives `"DJIB"`, it
- *   learns the phone's unicast IP and immediately replies with a unicast `"DJIH"` heartbeat.
- * - Stream Data Packet (`"DJID"`): 12-byte header followed by up to [MAX_UDP_PAYLOAD_BYTES]
+ * - Bridge Discovery Announce (`"DBAN"`): 4-byte ASCII magic broadcast by the phone every 1,000 ms
+ *   to the subnet broadcast address (`x.x.x.255:5600`). When the Quest 2 receives `"DBAN"`, it
+ *   learns the phone's unicast IP and immediately replies with a unicast `"DBHB"` heartbeat.
+ * - Stream Data Packet (`"DBDA"`): 12-byte header followed by up to [MAX_UDP_PAYLOAD_BYTES]
  *   (`1,388` bytes) of payload so the entire UDP payload (`<= 1,400` bytes) never fragments
  *   at the Wi-Fi IP layer.
  *   Header layout:
- *   - Bytes `0..3`: `"DJID"` (`0x44 0x4A 0x49 0x44`)
+ *   - Bytes `0..3`: `"DBDA"` (`0x44 0x42 0x44 0x41`)
  *   - Byte `4`: [channelType] (`0x01` = H.264 Annex-B video chunk, `0x02` = raw DUML v1 frame)
  *   - Byte `5`: reserved (`0x00`)
  *   - Bytes `6..9`: uint32 little-endian [sequenceNumber]
@@ -44,7 +44,7 @@ object UdpBridgeProtocol {
     /** Maximum inner payload bytes per UDP datagram so total datagram length is `<= 1,400` bytes. */
     const val MAX_UDP_PAYLOAD_BYTES: Int = 1388
 
-    /** Header size in bytes for `"DJID"` stream data datagrams. */
+    /** Header size in bytes for `"DBDA"` stream data datagrams. */
     const val DATA_HEADER_BYTES: Int = 12
 
     /** Channel identifier for H.264 Annex-B video chunks (`0x01`). */
@@ -53,35 +53,35 @@ object UdpBridgeProtocol {
     /** Channel identifier for verified DUML v1 frames (`0x02`). */
     const val CHANNEL_DUML: Int = 0x02
 
-    /** How long a Quest 2 subscriber remains active after its last `"DJIH"` heartbeat. */
+    /** How long a Quest 2 subscriber remains active after its last `"DBHB"` heartbeat. */
     const val SUBSCRIBER_TIMEOUT_MILLIS: Long = 5_000L
 
     private val HEARTBEAT_MAGIC = byteArrayOf(
         'D'.code.toByte(),
-        'J'.code.toByte(),
-        'I'.code.toByte(),
+        'B'.code.toByte(),
         'H'.code.toByte(),
+        'B'.code.toByte(),
     )
 
     private val BRIDGE_ANNOUNCE_MAGIC = byteArrayOf(
         'D'.code.toByte(),
-        'J'.code.toByte(),
-        'I'.code.toByte(),
         'B'.code.toByte(),
+        'A'.code.toByte(),
+        'N'.code.toByte(),
     )
 
     private const val DATA_MAGIC_0: Byte = 'D'.code.toByte()
-    private const val DATA_MAGIC_1: Byte = 'J'.code.toByte()
-    private const val DATA_MAGIC_2: Byte = 'I'.code.toByte()
-    private const val DATA_MAGIC_3: Byte = 'D'.code.toByte()
+    private const val DATA_MAGIC_1: Byte = 'B'.code.toByte()
+    private const val DATA_MAGIC_2: Byte = 'D'.code.toByte()
+    private const val DATA_MAGIC_3: Byte = 'A'.code.toByte()
 
     /**
-     * Returns a 4-byte `"DJIH"` discovery heartbeat packet sent by the Quest 2 viewer.
+     * Returns a 4-byte `"DBHB"` discovery heartbeat packet sent by the Quest 2 viewer.
      */
     fun buildHeartbeatPacket(): ByteArray = HEARTBEAT_MAGIC.copyOf()
 
     /**
-     * Returns true if the datagram buffer in [buffer] of [length] bytes starts with `"DJIH"`.
+     * Returns true if the datagram buffer in [buffer] of [length] bytes starts with `"DBHB"`.
      */
     fun isHeartbeatPacket(buffer: ByteArray, length: Int = buffer.size): Boolean {
         if (length < 4) return false
@@ -92,12 +92,12 @@ object UdpBridgeProtocol {
     }
 
     /**
-     * Returns a 4-byte `"DJIB"` bridge announce packet sent by the phone bridge.
+     * Returns a 4-byte `"DBAN"` bridge announce packet sent by the phone bridge.
      */
     fun buildBridgeAnnouncePacket(): ByteArray = BRIDGE_ANNOUNCE_MAGIC.copyOf()
 
     /**
-     * Returns true if the datagram buffer in [buffer] of [length] bytes starts with `"DJIB"`.
+     * Returns true if the datagram buffer in [buffer] of [length] bytes starts with `"DBAN"`.
      */
     fun isBridgeAnnouncePacket(buffer: ByteArray, length: Int = buffer.size): Boolean {
         if (length < 4) return false
@@ -108,7 +108,7 @@ object UdpBridgeProtocol {
     }
 
     /**
-     * Splits [payload] into one or more `"DJID"` UDP datagrams of at most [MAX_UDP_PAYLOAD_BYTES]
+     * Splits [payload] into one or more `"DBDA"` UDP datagrams of at most [MAX_UDP_PAYLOAD_BYTES]
      * payload bytes each, using [nextSequenceNumber] to assign a monotonically increasing uint32
      * sequence number to each datagram.
      */
@@ -146,8 +146,8 @@ object UdpBridgeProtocol {
     }
 
     /**
-     * Parses a received `"DJID"` UDP datagram of [length] bytes from [buffer].
-     * Returns null if the packet is malformed or does not start with `"DJID"`.
+     * Parses a received `"DBDA"` UDP datagram of [length] bytes from [buffer].
+     * Returns null if the packet is malformed or does not start with `"DBDA"`.
      */
     fun tryParseDataPacket(buffer: ByteArray, length: Int = buffer.size): UdpDataPacket? {
         if (length < DATA_HEADER_BYTES) return null
@@ -273,7 +273,7 @@ object UdpBridgeProtocol {
 }
 
 /**
- * Parsed `"DJID"` UDP stream packet.
+ * Parsed `"DBDA"` UDP stream packet.
  */
 data class UdpDataPacket(
     val channelType: Int,

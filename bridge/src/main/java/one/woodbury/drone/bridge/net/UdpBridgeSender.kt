@@ -36,9 +36,9 @@ data class UdpBridgeSenderMetrics(
 )
 
 /**
- * Listens on UDP port [UdpBridgeProtocol.UDP_BRIDGE_PORT] (`5600`) for `"DJIH"` discovery
- * heartbeats from the Meta Quest 2 (`:mirror`), sends periodic `"DJIB"` bridge announcements
- * to active subscribers, and forwards MTU-safe `"DJID"` H.264 video and DUML v1 telemetry
+ * Listens on UDP port [UdpBridgeProtocol.UDP_BRIDGE_PORT] (`5600`) for `"DBHB"` discovery
+ * heartbeats from the Meta Quest 2 (`:mirror`), sends periodic `"DBAN"` bridge announcements
+ * to active subscribers, and forwards MTU-safe `"DBDA"` H.264 video and DUML v1 telemetry
  * packets to the Quest 2.
  */
 class UdpBridgeSender(

@@ -54,7 +54,7 @@ instead parsed dynamically from inbound DUML version push packets and queries.
 The `:mirror` application is intentionally kept strictly read-only with respect
 to aircraft and remote controller state:
 
-- `:mirror` only transmits 4-byte `"DJIH"` UDP discovery heartbeats to register
+- `:mirror` only transmits 4-byte `"DBHB"` UDP discovery heartbeats to register
   as a video and telemetry subscriber with `:bridge`, and `:bridge` never
   accepts or forwards upstream DUML commands received over the UDP network
   socket.

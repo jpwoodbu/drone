@@ -75,8 +75,8 @@ data class MirrorReceiverState(
 }
 
 /**
- * Sends unicast `"DJIH"` discovery heartbeats on UDP port [UdpBridgeProtocol.UDP_BRIDGE_PORT] (`5600`),
- * listens for `"DJIB"` bridge announcements from the phone, and receives `"DJID"` H.264 video
+ * Sends unicast `"DBHB"` discovery heartbeats on UDP port [UdpBridgeProtocol.UDP_BRIDGE_PORT] (`5600`),
+ * listens for `"DBAN"` bridge announcements from the phone, and receives `"DBDA"` H.264 video
  * and DUML v1 telemetry datagrams from the phone bridge (`:bridge`).
  */
 class UdpBridgeReceiver(
@@ -260,8 +260,8 @@ class UdpBridgeReceiver(
     }
 
     /**
-     * Opens UDP port `5600`, acquires a Wi-Fi `MulticastLock`, starts the periodic `"DJIH"`
-     * discovery broadcaster, and starts the `"DJID"` stream receiver thread.
+     * Opens UDP port `5600`, acquires a Wi-Fi `MulticastLock`, starts the periodic `"DBHB"`
+     * discovery broadcaster, and starts the `"DBDA"` stream receiver thread.
      */
     @Synchronized
     fun start() {
