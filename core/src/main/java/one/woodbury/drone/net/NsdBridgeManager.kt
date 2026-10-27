@@ -179,6 +179,15 @@ class NsdBridgeClient(
         }
     }
 
+    /**
+     * Stops and immediately restarts discovery, clearing any pending resolutions.
+     */
+    @Synchronized
+    fun restartDiscovery() {
+        stopDiscovery()
+        startDiscovery()
+    }
+
     private fun enqueueResolve(service: NsdServiceInfo) {
         resolveQueue.offer(service)
         processNextResolve()

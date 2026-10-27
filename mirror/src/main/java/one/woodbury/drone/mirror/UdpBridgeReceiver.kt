@@ -59,7 +59,20 @@ data class MirrorReceiverState(
     val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
     val homeLatitudeDegrees: Double? = null,
     val homeLongitudeDegrees: Double? = null,
-)
+) {
+    /**
+     * True if the receiver has previously decoded frames from a connected bridge,
+     * but packet reception has ceased and the app is actively attempting to reconnect.
+     */
+    val isReconnecting: Boolean
+        get() = phoneBridgeIp == null && videoDecoderMetrics.framesDecoded > 0L
+
+    /**
+     * True if an active stream is currently established with the phone bridge.
+     */
+    val isConnected: Boolean
+        get() = phoneBridgeIp != null
+}
 
 /**
  * Sends unicast `"DJIH"` discovery heartbeats on UDP port [UdpBridgeProtocol.UDP_BRIDGE_PORT] (`5600`),
@@ -160,6 +173,11 @@ class UdpBridgeReceiver(
     @Volatile
     private var latestPhoneInetAddress: InetAddress? = null
 
+    @Volatile
+    private var lastKnownPhoneAddress: InetAddress? = null
+
+    private val disconnectedCyclesCounter = AtomicLong(0L)
+
     /**
      * Updates and persists the manual Phone Bridge IPv4 address. Passing an empty string
      * clears the manual override and relies on automatic discovery.
@@ -172,6 +190,7 @@ class UdpBridgeReceiver(
             .apply()
         if (sanitized.isEmpty()) {
             latestPhoneInetAddress = null
+            lastKnownPhoneAddress = null
         }
         lastErrorText = null
         _receiverState.update { currentState ->
@@ -300,6 +319,7 @@ class UdpBridgeReceiver(
                     try {
                         val inetAddress = InetAddress.getByName(hostAddress)
                         latestPhoneInetAddress = inetAddress
+                        lastKnownPhoneAddress = inetAddress
                         _receiverState.update { currentState ->
                             currentState.copy(
                                 phoneBridgeIp = hostAddress,
@@ -338,6 +358,9 @@ class UdpBridgeReceiver(
     fun shutdown() {
         isRunning.set(false)
         lastPacketReceivedTimestampMillis.set(0L)
+        latestPhoneInetAddress = null
+        lastKnownPhoneAddress = null
+        disconnectedCyclesCounter.set(0L)
         socketStatusText = "Stopped"
         nsdClient?.stopDiscovery()
         nsdClient = null
@@ -361,8 +384,21 @@ class UdpBridgeReceiver(
         val configuredIp = manualPhoneIp
         if (configuredIp.isNotEmpty()) {
             targetAddresses.add(configuredIp)
+        }
+
+        val activePhoneIp = _receiverState.value.phoneBridgeIp
+        if (activePhoneIp != null) {
+            targetAddresses.add(activePhoneIp)
         } else {
-            latestPhoneInetAddress?.hostAddress?.let { targetAddresses.add(it) }
+            // When disconnected or searching, probe the last-known phone address if available.
+            lastKnownPhoneAddress?.hostAddress?.let { targetAddresses.add(it) }
+
+            // Also broadcast to all local subnets to re-establish contact with the bridge.
+            val localEndpoints = UdpBridgeProtocol.queryLocalIpv4Addresses(applicationContext)
+            for (endpoint in localEndpoints) {
+                endpoint.broadcastAddress?.let { targetAddresses.add(it) }
+                endpoint.gatewayAddress?.let { targetAddresses.add(it) }
+            }
         }
 
         if (targetAddresses.isEmpty()) return
@@ -436,6 +472,7 @@ class UdpBridgeReceiver(
                     if (senderAddress != null && senderHost != null && senderHost !in localAddresses) {
                         lastPacketReceivedTimestampMillis.set(SystemClock.elapsedRealtime())
                         latestPhoneInetAddress = senderAddress
+                        lastKnownPhoneAddress = senderAddress
                         _receiverState.update { currentState ->
                             currentState.copy(
                                 phoneBridgeIp = senderHost,
@@ -451,6 +488,7 @@ class UdpBridgeReceiver(
                 lastPacketReceivedTimestampMillis.set(SystemClock.elapsedRealtime())
                 if (senderAddress != null) {
                     latestPhoneInetAddress = senderAddress
+                    lastKnownPhoneAddress = senderAddress
                 }
 
                 val sequenceDrops = if (lastSequenceNumber != null) {
@@ -635,11 +673,14 @@ class UdpBridgeReceiver(
      */
     private fun checkConnectionTimeout() {
         val lastReceivedTimestampMillis = lastPacketReceivedTimestampMillis.get()
+        val now = SystemClock.elapsedRealtime()
         if (lastReceivedTimestampMillis > 0L &&
-            (SystemClock.elapsedRealtime() - lastReceivedTimestampMillis) > CONNECTION_INACTIVITY_TIMEOUT_MILLIS
+            (now - lastReceivedTimestampMillis) > CONNECTION_INACTIVITY_TIMEOUT_MILLIS
         ) {
-            if (_receiverState.value.phoneBridgeIp != null) {
+            val wasConnected = _receiverState.value.phoneBridgeIp != null
+            if (wasConnected) {
                 latestPhoneInetAddress = null
+                videoDecoder.resetStream()
                 _receiverState.update { currentState ->
                     currentState.copy(
                         phoneBridgeIp = null,
@@ -647,7 +688,13 @@ class UdpBridgeReceiver(
                     )
                 }
             }
+            val cycles = disconnectedCyclesCounter.incrementAndGet()
+            // Periodically restart mDNS discovery every 10 seconds while disconnected to refresh service resolutions.
+            if (cycles % 10L == 0L) {
+                nsdClient?.restartDiscovery()
+            }
         } else if (lastReceivedTimestampMillis > 0L) {
+            disconnectedCyclesCounter.set(0L)
             // Periodically refresh transport and decoder metrics when active if telemetry has paused.
             _receiverState.update { currentState ->
                 currentState.copy(

@@ -202,6 +202,7 @@ fun HudOverlay(
         AltitudeFormatter.isHighAltitudeWarning(effectiveAltitudeMeters)
 
     val activeAlert = when {
+        state.isReconnecting -> "LINK LOST" to BaseHudAlertRed.copy(alpha = opacity)
         telemetry?.isCompassError == true -> "COMPASS" to BaseHudAlertRed.copy(alpha = opacity)
         telemetry?.isAutoLanding == true -> "LANDING" to BaseHudAlertAmber.copy(alpha = opacity)
         else -> null

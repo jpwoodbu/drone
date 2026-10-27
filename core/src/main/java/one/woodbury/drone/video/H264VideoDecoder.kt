@@ -476,6 +476,16 @@ class H264VideoDecoder(
     }
 
     /**
+     * Resets input stream buffering and stream parser synchronization state so that subsequent
+     * received H.264 video chunks cleanly align to the next keyframe.
+     */
+    fun resetStream() {
+        chunkQueue.clear()
+        needsCodecConfigPrepend.set(true)
+        extractor.resetForNewDecoder()
+    }
+
+    /**
      * Releases all decoder threads and resources.
      */
     fun shutdown() {

@@ -3,7 +3,9 @@ package one.woodbury.drone.mirror
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import one.woodbury.drone.video.VideoDecoderMetrics
 
 class MirrorReceiverStateTest {
 
@@ -17,6 +19,8 @@ class MirrorReceiverStateTest {
         assertEquals(0L, state.heartbeatsSent)
         assertNull(state.phoneBridgeIp)
         assertFalse(state.isListening)
+        assertFalse(state.isConnected)
+        assertFalse(state.isReconnecting)
     }
 
     @Test
@@ -32,5 +36,19 @@ class MirrorReceiverStateTest {
         assertEquals(2_000_000L, updatedState.udpBytesReceived)
         assertEquals(3L, updatedState.udpSequenceDrops)
         assertEquals(50L, updatedState.dumlFramesReceived)
+    }
+
+    @Test
+    fun connectionStatusProperties_reflectBridgeState() {
+        val connectedState = MirrorReceiverState(
+            phoneBridgeIp = "192.168.1.50",
+            videoDecoderMetrics = VideoDecoderMetrics(framesDecoded = 120L),
+        )
+        assertTrue(connectedState.isConnected)
+        assertFalse(connectedState.isReconnecting)
+
+        val reconnectingState = connectedState.copy(phoneBridgeIp = null)
+        assertFalse(reconnectingState.isConnected)
+        assertTrue(reconnectingState.isReconnecting)
     }
 }

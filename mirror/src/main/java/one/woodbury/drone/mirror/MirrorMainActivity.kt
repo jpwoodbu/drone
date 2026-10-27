@@ -283,6 +283,36 @@ fun MirrorCockpitScreen(
                     }
                 }
 
+                if (state.isReconnecting) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.55f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier
+                                .background(Color(0xFF161B22).copy(alpha = 0.92f), RoundedCornerShape(10.dp))
+                                .padding(horizontal = 24.dp, vertical = 16.dp),
+                        ) {
+                            Text(
+                                text = "CONNECTION LOST",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFF85149),
+                            )
+                            Text(
+                                text = "Reconnecting to Phone Bridge…",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color.White.copy(alpha = 0.85f),
+                            )
+                        }
+                    }
+                }
+
                 if (state.isGridOverlayEnabled) {
                     RuleOfThirdsGridOverlay()
                 }
@@ -515,6 +545,7 @@ private fun TopStatusBar(
     val isAltitudeWarning = effectiveAltitude != null && AltitudeFormatter.isHighAltitudeWarning(effectiveAltitude)
 
     val activeAlert = when {
+        state.isReconnecting -> "LINK LOST" to Color(0xFFF85149)
         telemetry?.isCompassError == true -> "COMPASS" to Color(0xFFF85149)
         telemetry?.isAutoLanding == true -> "LANDING" to Color(0xFFD29922)
         else -> null
