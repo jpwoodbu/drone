@@ -18,7 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 /**
- * Modal dialog describing DJI autopilot flight modes, behavior distinctions, and app aliases.
+ * Modal dialog describing autopilot flight modes, behavior distinctions, and app aliases.
  */
 @Composable
 fun FlightModesDialog(
@@ -56,7 +56,7 @@ fun FlightModesDialog(
                 FlightModeItem(
                     name = "P-GPS",
                     summary = "Positioning Mode (GPS)",
-                    description = "The flight controller uses GPS satellites and IMUs to hold precise 3D position and hover automatically when control sticks are centered. Steering is nose-relative: pushing forward on the pitch stick flies in the direction the aircraft's nose points. Commercial DJI apps (DJI Fly/GO) group both GPS Brake and GPS Attitude hold under the name 'P-GPS'.",
+                    description = "The flight controller uses GPS satellites and IMUs to hold precise 3D position and hover automatically when control sticks are centered. Steering is nose-relative: pushing forward on the pitch stick flies in the direction the aircraft's nose points. Other flight control software often groups both GPS Brake and GPS Attitude hold under the name 'P-GPS'.",
                 )
                 FlightModeItem(
                     name = "GPS-CL",
@@ -86,7 +86,7 @@ fun FlightModesDialog(
                 FlightModeItem(
                     name = "AUTO-LAND",
                     summary = "Automated Landing",
-                    description = "Automated descent at a controlled vertical rate, shutting off motors upon ground contact. Can be engaged in flight by holding the Fn button on the DJI remote controller for 2 seconds. The remote controller emits a repeating two-beep pattern throughout the landing sequence.",
+                    description = "Automated descent at a controlled vertical rate, shutting off motors upon ground contact. Can be engaged in flight by holding the Fn button on the physical remote controller for 2 seconds. The remote controller emits a repeating two-beep pattern throughout the landing sequence.",
                 )
                 FlightModeItem(
                     name = "FORCE-LAND",

@@ -67,8 +67,8 @@ import one.woodbury.drone.video.H264VideoDecoder
 import kotlin.math.roundToInt
 
 /**
- * Landscape 2D viewer activity for the Meta Quest 2 (`one.woodbury.drone.mirror`).
- * Displays the live 16:9 H.264 video feed from the Mavic Air alongside a compact telemetry HUD bar
+ * Landscape 2D viewer activity for the Mirror application (`one.woodbury.drone.mirror`).
+ * Displays the live 16:9 H.264 video feed alongside a compact telemetry HUD bar
  * and a persistent manual Phone Bridge IP input.
  */
 class MirrorMainActivity : ComponentActivity() {
@@ -252,9 +252,9 @@ fun MirrorCockpitScreen(
                         )
                         Text(
                             text = if (state.localIpv4Addresses.isEmpty()) {
-                                "No Wi-Fi IPv4 address detected on Quest 2"
+                                "No Wi-Fi IPv4 address detected on Mirror"
                             } else {
-                                "Quest 2 IP: ${state.localIpv4Addresses.joinToString(", ")}"
+                                "Mirror IP: ${state.localIpv4Addresses.joinToString(", ")}"
                             },
                             style = MaterialTheme.typography.bodySmall,
                             fontFamily = FontFamily.Monospace,

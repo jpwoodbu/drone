@@ -19,7 +19,7 @@ import one.woodbury.drone.net.NsdBridgeServer
 import one.woodbury.drone.net.UdpBridgeProtocol
 
 /**
- * Snapshot of the Phone-to-Quest 2 UDP bridge status displayed in the `:bridge` UI.
+ * Snapshot of the Phone-to-Mirror UDP bridge status displayed in the `:bridge` UI.
  */
 data class UdpBridgeSenderMetrics(
     val isListening: Boolean = false,
@@ -37,9 +37,9 @@ data class UdpBridgeSenderMetrics(
 
 /**
  * Listens on UDP port [UdpBridgeProtocol.UDP_BRIDGE_PORT] (`5600`) for `"DBHB"` discovery
- * heartbeats from the Meta Quest 2 (`:mirror`), sends periodic `"DBAN"` bridge announcements
+ * heartbeats from the Mirror app (`:mirror`), sends periodic `"DBAN"` bridge announcements
  * to active subscribers, and forwards MTU-safe `"DBDA"` H.264 video and DUML v1 telemetry
- * packets to the Quest 2.
+ * packets to Mirror subscribers.
  */
 class UdpBridgeSender(
     private val applicationContext: Context,
@@ -208,7 +208,7 @@ class UdpBridgeSender(
     }
 
     /**
-     * Forcibly disconnects all active Quest 2 subscribers, clears pending outgoing datagrams,
+     * Forcibly disconnects all active Mirror subscribers, clears pending outgoing datagrams,
      * and pauses accepting new subscriptions until [resumeSubscribers] is called.
      */
     fun disconnectAllSubscribers() {
@@ -219,7 +219,7 @@ class UdpBridgeSender(
     }
 
     /**
-     * Resumes accepting Quest 2 discovery heartbeats and broadcasting bridge announcements.
+     * Resumes accepting Mirror discovery heartbeats and broadcasting bridge announcements.
      */
     fun resumeSubscribers() {
         isAcceptingSubscribers.set(true)
@@ -228,7 +228,7 @@ class UdpBridgeSender(
 
     /**
      * Packetizes and enqueues a raw H.264 Annex-B video chunk (`0x574A`) for transmission
-     * if at least one Quest 2 subscriber is active.
+     * if at least one Mirror subscriber is active.
      */
     fun enqueueVideoChunk(videoChunk: ByteArray) {
         if (!isRunning.get() || !hasAnyDestination() || videoChunk.isEmpty()) {
@@ -239,7 +239,7 @@ class UdpBridgeSender(
 
     /**
      * Packetizes and enqueues a verified DUML v1 packet (`0x5749`) for transmission
-     * if at least one Quest 2 subscriber is active.
+     * if at least one Mirror subscriber is active.
      */
     fun enqueueDumlFrameBytes(rawDumlFrame: ByteArray) {
         if (!isRunning.get() || !hasAnyDestination() || rawDumlFrame.isEmpty()) {

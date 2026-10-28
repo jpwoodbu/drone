@@ -12,13 +12,13 @@ import java.nio.ByteOrder
 
 /**
  * Defines the lightweight UDP framing protocol used between the Phone Bridge (`:bridge`)
- * and the Meta Quest 2 Viewer (`:mirror`) on UDP port [UDP_BRIDGE_PORT].
+ * and the Mirror Viewer (`:mirror`) on UDP port [UDP_BRIDGE_PORT].
  *
- * - Viewer Discovery Heartbeat (`"DBHB"`): 4-byte ASCII magic sent by the Quest 2 every 1,000 ms
+ * - Viewer Discovery Heartbeat (`"DBHB"`): 4-byte ASCII magic sent by the Mirror viewer every 1,000 ms
  *   to the subnet broadcast address (`x.x.x.255:5600`), default gateway, and known phone IP.
  *   The phone records the sender IPv4 address as an active subscriber.
  * - Bridge Discovery Announce (`"DBAN"`): 4-byte ASCII magic broadcast by the phone every 1,000 ms
- *   to the subnet broadcast address (`x.x.x.255:5600`). When the Quest 2 receives `"DBAN"`, it
+ *   to the subnet broadcast address (`x.x.x.255:5600`). When the Mirror viewer receives `"DBAN"`, it
  *   learns the phone's unicast IP and immediately replies with a unicast `"DBHB"` heartbeat.
  * - Stream Data Packet (`"DBDA"`): 12-byte header followed by up to [MAX_UDP_PAYLOAD_BYTES]
  *   (`1,388` bytes) of payload so the entire UDP payload (`<= 1,400` bytes) never fragments
@@ -32,7 +32,7 @@ import java.nio.ByteOrder
  */
 object UdpBridgeProtocol {
 
-    /** UDP port used by both the phone discovery listener and Quest 2 stream receiver. */
+    /** UDP port used by both the phone discovery listener and Mirror stream receiver. */
     const val UDP_BRIDGE_PORT: Int = 5600
 
     /** Service type for mDNS / DNS-SD Network Service Discovery. */
@@ -53,7 +53,7 @@ object UdpBridgeProtocol {
     /** Channel identifier for verified DUML v1 frames (`0x02`). */
     const val CHANNEL_DUML: Int = 0x02
 
-    /** How long a Quest 2 subscriber remains active after its last `"DBHB"` heartbeat. */
+    /** How long a Mirror subscriber remains active after its last `"DBHB"` heartbeat. */
     const val SUBSCRIBER_TIMEOUT_MILLIS: Long = 5_000L
 
     private val HEARTBEAT_MAGIC = byteArrayOf(
@@ -76,7 +76,7 @@ object UdpBridgeProtocol {
     private const val DATA_MAGIC_3: Byte = 'A'.code.toByte()
 
     /**
-     * Returns a 4-byte `"DBHB"` discovery heartbeat packet sent by the Quest 2 viewer.
+     * Returns a 4-byte `"DBHB"` discovery heartbeat packet sent by the Mirror viewer.
      */
     fun buildHeartbeatPacket(): ByteArray = HEARTBEAT_MAGIC.copyOf()
 

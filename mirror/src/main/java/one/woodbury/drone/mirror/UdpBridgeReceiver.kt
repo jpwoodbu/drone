@@ -31,7 +31,7 @@ import one.woodbury.drone.video.H264VideoDecoder
 import one.woodbury.drone.video.VideoDecoderMetrics
 
 /**
- * Immutable UI state for the Meta Quest 2 Viewer (`:mirror`).
+ * Immutable UI state for the Mirror Viewer (`:mirror`).
  */
 data class MirrorReceiverState(
     val isListening: Boolean = false,

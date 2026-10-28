@@ -354,7 +354,7 @@ class UsbAccessoryConnectionManager(
             _mainScreenState.update { currentState ->
                 currentState.copy(
                     connectionPhase = ConnectionPhase.AWAITING_PERMISSION,
-                    statusMessage = "DJI USB accessory detected. Requesting USB permission…",
+                    statusMessage = "USB controller detected. Requesting USB permission…",
                     accessoryDescriptor = descriptor,
                 )
             }
@@ -393,14 +393,14 @@ class UsbAccessoryConnectionManager(
     }
 
     /**
-     * Forcibly disconnects all active Quest 2 subscribers and pauses accepting new subscriptions.
+     * Forcibly disconnects all active Mirror subscribers and pauses accepting new subscriptions.
      */
     fun disconnectAllSubscribers() {
         udpBridgeSender.disconnectAllSubscribers()
     }
 
     /**
-     * Resumes accepting Quest 2 discovery heartbeats and bridge announcements.
+     * Resumes accepting Mirror discovery heartbeats and bridge announcements.
      */
     fun resumeSubscribers() {
         udpBridgeSender.resumeSubscribers()

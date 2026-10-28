@@ -19,7 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 /**
- * Modal dialog displaying detailed Phone-to-Quest UDP bridge connection and network diagnostics.
+ * Modal dialog displaying detailed Phone-to-Mirror UDP bridge connection and network diagnostics.
  */
 @Composable
 fun NetworkDiagnosticsDialog(
