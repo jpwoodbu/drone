@@ -50,5 +50,19 @@ class MirrorReceiverStateTest {
         val reconnectingState = connectedState.copy(phoneBridgeIp = null)
         assertFalse(reconnectingState.isConnected)
         assertTrue(reconnectingState.isReconnecting)
+
+        val restoredState = reconnectingState.copy(phoneBridgeIp = "192.168.1.50")
+        assertTrue(restoredState.isConnected)
+        assertFalse(restoredState.isReconnecting)
+    }
+
+    @Test
+    fun initialSearchingState_isNotReconnectingBeforeFramesDecoded() {
+        val initialSearchingState = MirrorReceiverState(
+            phoneBridgeIp = null,
+            videoDecoderMetrics = VideoDecoderMetrics(framesDecoded = 0L),
+        )
+        assertFalse(initialSearchingState.isConnected)
+        assertFalse(initialSearchingState.isReconnecting)
     }
 }

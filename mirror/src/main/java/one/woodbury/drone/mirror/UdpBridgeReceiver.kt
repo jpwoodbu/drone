@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import one.woodbury.drone.net.LocalIpv4Endpoint
 import one.woodbury.drone.net.NsdBridgeClient
 import one.woodbury.drone.net.UdpBridgeProtocol
 import one.woodbury.drone.protocol.BatteryTelemetry
@@ -176,6 +177,15 @@ class UdpBridgeReceiver(
     @Volatile
     private var lastKnownPhoneAddress: InetAddress? = null
 
+    @Volatile
+    private var cachedLocalIpv4Endpoints: List<LocalIpv4Endpoint> = emptyList()
+
+    @Volatile
+    private var cachedLocalIpv4AddressSet: Set<String> = emptySet()
+
+    @Volatile
+    private var lastLocalAddressRefreshMillis: Long = 0L
+
     private val disconnectedCyclesCounter = AtomicLong(0L)
 
     /**
@@ -191,6 +201,9 @@ class UdpBridgeReceiver(
         if (sanitized.isEmpty()) {
             latestPhoneInetAddress = null
             lastKnownPhoneAddress = null
+        } else {
+            lastPacketReceivedTimestampMillis.set(SystemClock.elapsedRealtime())
+            disconnectedCyclesCounter.set(0L)
         }
         lastErrorText = null
         _receiverState.update { currentState ->
@@ -320,6 +333,8 @@ class UdpBridgeReceiver(
                         val inetAddress = InetAddress.getByName(hostAddress)
                         latestPhoneInetAddress = inetAddress
                         lastKnownPhoneAddress = inetAddress
+                        lastPacketReceivedTimestampMillis.set(SystemClock.elapsedRealtime())
+                        disconnectedCyclesCounter.set(0L)
                         _receiverState.update { currentState ->
                             currentState.copy(
                                 phoneBridgeIp = hostAddress,
@@ -394,7 +409,7 @@ class UdpBridgeReceiver(
             lastKnownPhoneAddress?.hostAddress?.let { targetAddresses.add(it) }
 
             // Also broadcast to all local subnets to re-establish contact with the bridge.
-            val localEndpoints = UdpBridgeProtocol.queryLocalIpv4Addresses(applicationContext)
+            val localEndpoints = getOrRefreshLocalIpv4Endpoints()
             for (endpoint in localEndpoints) {
                 endpoint.broadcastAddress?.let { targetAddresses.add(it) }
                 endpoint.gatewayAddress?.let { targetAddresses.add(it) }
@@ -466,10 +481,7 @@ class UdpBridgeReceiver(
                 val senderHost = senderAddress?.hostAddress
 
                 if (UdpBridgeProtocol.isBridgeAnnouncePacket(receiveBuffer, length)) {
-                    val localAddresses = UdpBridgeProtocol.queryLocalIpv4Addresses(applicationContext)
-                        .map { it.ipv4Address }
-                        .toSet()
-                    if (senderAddress != null && senderHost != null && senderHost !in localAddresses) {
+                    if (senderAddress != null && senderHost != null && !isLocalIpv4Address(senderHost)) {
                         lastPacketReceivedTimestampMillis.set(SystemClock.elapsedRealtime())
                         latestPhoneInetAddress = senderAddress
                         lastKnownPhoneAddress = senderAddress
@@ -489,6 +501,14 @@ class UdpBridgeReceiver(
                 if (senderAddress != null) {
                     latestPhoneInetAddress = senderAddress
                     lastKnownPhoneAddress = senderAddress
+                }
+                if (senderHost != null && _receiverState.value.phoneBridgeIp == null) {
+                    _receiverState.update { currentState ->
+                        currentState.copy(
+                            phoneBridgeIp = senderHost,
+                            lastSocketError = lastErrorText,
+                        )
+                    }
                 }
 
                 val sequenceDrops = if (lastSequenceNumber != null) {
@@ -651,8 +671,25 @@ class UdpBridgeReceiver(
         }
     }
 
-    private fun refreshLocalInterfaces() {
+    private fun getOrRefreshLocalIpv4Endpoints(force: Boolean = false): List<LocalIpv4Endpoint> {
+        val now = SystemClock.elapsedRealtime()
+        if (!force && now - lastLocalAddressRefreshMillis < LOCAL_ADDRESS_CACHE_TTL_MILLIS && cachedLocalIpv4Endpoints.isNotEmpty()) {
+            return cachedLocalIpv4Endpoints
+        }
         val endpoints = UdpBridgeProtocol.queryLocalIpv4Addresses(applicationContext)
+        cachedLocalIpv4Endpoints = endpoints
+        cachedLocalIpv4AddressSet = endpoints.map { it.ipv4Address }.toSet()
+        lastLocalAddressRefreshMillis = now
+        return endpoints
+    }
+
+    private fun isLocalIpv4Address(hostAddress: String): Boolean {
+        getOrRefreshLocalIpv4Endpoints(force = false)
+        return hostAddress in cachedLocalIpv4AddressSet
+    }
+
+    private fun refreshLocalInterfaces(force: Boolean = false) {
+        val endpoints = getOrRefreshLocalIpv4Endpoints(force = force)
             .map { "${it.ipv4Address} (${it.interfaceName})" }
         _receiverState.update { currentState ->
             currentState.copy(
@@ -671,6 +708,7 @@ class UdpBridgeReceiver(
      * If no announce or data packets have arrived within [CONNECTION_INACTIVITY_TIMEOUT_MILLIS],
      * the active connection state is reset to disconnected (`phoneBridgeIp = null`).
      */
+    @Synchronized
     private fun checkConnectionTimeout() {
         val lastReceivedTimestampMillis = lastPacketReceivedTimestampMillis.get()
         val now = SystemClock.elapsedRealtime()
@@ -688,6 +726,10 @@ class UdpBridgeReceiver(
                     )
                 }
             }
+            // Clear the timestamp so that stale values do not immediately re-trigger a timeout
+            // when a bridge IP is discovered/reconnected.
+            lastPacketReceivedTimestampMillis.set(0L)
+
             val cycles = disconnectedCyclesCounter.incrementAndGet()
             // Periodically restart mDNS discovery every 10 seconds while disconnected to refresh service resolutions.
             if (cycles % 10L == 0L) {
@@ -711,6 +753,7 @@ class UdpBridgeReceiver(
 
     companion object {
         private const val CONNECTION_INACTIVITY_TIMEOUT_MILLIS: Long = 2_500L
+        private const val LOCAL_ADDRESS_CACHE_TTL_MILLIS: Long = 3_000L
         private const val _preferencesFileName = "one.woodbury.drone.mirror.preferences"
         private const val _preferencePhoneBridgeIp = "preference_phone_bridge_ip"
         private const val _preferenceUnitSystem = "preference_unit_system"
