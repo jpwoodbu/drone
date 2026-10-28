@@ -1,0 +1,26 @@
+version: 2
+updates:
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      androidx-compose:
+        patterns:
+          - "androidx.compose*"
+      androidx-core:
+        patterns:
+          - "androidx.core*"
+          - "androidx.lifecycle*"
+          - "androidx.activity*"
+      testing:
+        patterns:
+          - "junit*"
+          - "androidx.test*"
+          - "androidx.test.espresso*"
+          - "androidx.test.ext*"
+      android-build-tools:
+        patterns:
+          - "com.android.*"
+          - "org.jetbrains.kotlin*"
