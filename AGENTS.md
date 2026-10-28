@@ -28,3 +28,9 @@
 
 - Refer to the local reverse-engineered DUML v1 reference documentation in
   `docs/duml/` before researching online or implementing DUML packets.
+
+## Device references
+
+- Refer to the device running the apps as "the device" rather than assuming they
+  are a phone or VR headset. Both the `:bridge` and `:mirror` apps can run on
+  any kind of Android device.
