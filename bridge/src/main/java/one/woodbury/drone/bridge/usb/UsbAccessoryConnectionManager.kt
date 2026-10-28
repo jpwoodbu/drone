@@ -191,6 +191,9 @@ class UsbAccessoryConnectionManager(
     var isVideoPreviewEnabled: Boolean = false
 
     private val udpBridgeSender: UdpBridgeSender = UdpBridgeSender(applicationContext) { bridgeMetrics ->
+        val isStreaming = bridgeMetrics.activeSubscribers.isNotEmpty()
+        val isPaused = !bridgeMetrics.isAcceptingSubscribers
+        BridgeForegroundService.updateStatus(applicationContext, isStreaming, isPaused)
         if (isUiVisible) {
             _mainScreenState.update { currentState ->
                 currentState.copy(udpBridgeMetrics = bridgeMetrics)

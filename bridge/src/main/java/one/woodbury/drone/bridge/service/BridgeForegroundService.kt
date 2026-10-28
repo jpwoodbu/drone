@@ -1,5 +1,6 @@
 package one.woodbury.drone.bridge.service
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -34,29 +35,14 @@ class BridgeForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isServiceRunning = true
+        lastState = NotificationState(isStreaming = false, isPaused = false)
         createNotificationChannel()
         acquireLocks()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val openAppIntent = Intent(this, MainActivity::class.java).apply {
-            this.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            openAppIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-
-        val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("Drone Phone Bridge")
-            .setContentText("Bridge active — streaming to Quest 2")
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .build()
+        val notification = buildNotification(this, isStreaming = false, isPaused = false)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
@@ -74,6 +60,8 @@ class BridgeForegroundService : Service() {
     override fun onDestroy() {
         releaseLocks()
         stopForeground(STOP_FOREGROUND_REMOVE)
+        isServiceRunning = false
+        lastState = null
         super.onDestroy()
     }
 
@@ -81,10 +69,10 @@ class BridgeForegroundService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
-                "Drone Bridge Service",
+                getString(R.string.bridge_notification_channel_name),
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "Maintains USB and Wi-Fi streaming while the phone is locked."
+                description = getString(R.string.bridge_notification_channel_description)
                 setShowBadge(false)
             }
             val notificationManager = getSystemService(NotificationManager::class.java)
@@ -147,6 +135,41 @@ class BridgeForegroundService : Service() {
     }
 
     companion object {
+        @Volatile
+        private var isServiceRunning = false
+
+        private data class NotificationState(val isStreaming: Boolean, val isPaused: Boolean)
+
+        @Volatile
+        private var lastState: NotificationState? = null
+
+        private fun buildNotification(context: Context, isStreaming: Boolean, isPaused: Boolean = false): Notification {
+            val openAppIntent = Intent(context, MainActivity::class.java).apply {
+                this.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                0,
+                openAppIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+
+            val contentText = when {
+                isPaused -> context.getString(R.string.bridge_notification_paused)
+                isStreaming -> context.getString(R.string.bridge_notification_streaming)
+                else -> context.getString(R.string.bridge_notification_waiting)
+            }
+
+            return NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
+                .setContentTitle(context.getString(R.string.bridge_notification_title))
+                .setContentText(contentText)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentIntent(pendingIntent)
+                .setOngoing(true)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .build()
+        }
+
         /**
          * Starts the foreground bridge service.
          */
@@ -161,6 +184,19 @@ class BridgeForegroundService : Service() {
         fun stop(context: Context) {
             val intent = Intent(context, BridgeForegroundService::class.java)
             context.stopService(intent)
+        }
+
+        /**
+         * Dynamically updates the ongoing foreground notification with the current streaming status.
+         */
+        fun updateStatus(context: Context, isStreaming: Boolean, isPaused: Boolean = false) {
+            if (!isServiceRunning) return
+            val newState = NotificationState(isStreaming, isPaused)
+            if (newState == lastState) return
+            lastState = newState
+            val notificationManager = context.getSystemService(NotificationManager::class.java) ?: return
+            val notification = buildNotification(context, isStreaming, isPaused)
+            notificationManager.notify(NOTIFICATION_ID, notification)
         }
     }
 }

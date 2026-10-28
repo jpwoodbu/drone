@@ -1,3 +1,9 @@
 <resources>
     <string name="app_name">Drone Bridge</string>
+    <string name="bridge_notification_title">Drone Bridge</string>
+    <string name="bridge_notification_waiting">Bridge active — waiting for Mirror…</string>
+    <string name="bridge_notification_streaming">Bridge active — streaming to Mirror</string>
+    <string name="bridge_notification_paused">Bridge active — streaming paused</string>
+    <string name="bridge_notification_channel_name">Drone Bridge Service</string>
+    <string name="bridge_notification_channel_description">Maintains USB and Wi-Fi streaming while the device is locked.</string>
 </resources>
