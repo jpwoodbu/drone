@@ -24,7 +24,7 @@ private const val NOTIFICATION_ID = 5601
 
 /**
  * Foreground service that maintains CPU execution and low-latency Wi-Fi streaming
- * while the drone controller is connected and the phone screen is turned off in a pocket.
+ * while the drone controller is connected and the device screen is turned off.
  */
 class BridgeForegroundService : Service() {
 

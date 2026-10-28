@@ -379,7 +379,7 @@ private fun NetworkServerCard(
                 value = bridge.nsdStatus,
             )
             KeyValueItem(
-                label = "Phone Local IP(s)",
+                label = "Device Local IP(s)",
                 value = if (bridge.localIpv4Addresses.isEmpty()) {
                     "No Wi-Fi / Hotspot IPv4"
                 } else {

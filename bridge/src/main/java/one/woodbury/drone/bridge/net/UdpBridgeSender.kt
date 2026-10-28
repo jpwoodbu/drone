@@ -19,7 +19,7 @@ import one.woodbury.drone.net.NsdBridgeServer
 import one.woodbury.drone.net.UdpBridgeProtocol
 
 /**
- * Snapshot of the Phone-to-Mirror UDP bridge status displayed in the `:bridge` UI.
+ * Snapshot of the Bridge-to-Mirror UDP bridge status displayed in the `:bridge` UI.
  */
 data class UdpBridgeSenderMetrics(
     val isListening: Boolean = false,

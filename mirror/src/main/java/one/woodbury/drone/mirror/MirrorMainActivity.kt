@@ -69,7 +69,7 @@ import kotlin.math.roundToInt
 /**
  * Landscape 2D viewer activity for the Mirror application (`one.woodbury.drone.mirror`).
  * Displays the live 16:9 H.264 video feed alongside a compact telemetry HUD bar
- * and a persistent manual Phone Bridge IP input.
+ * and a persistent manual Bridge IP input.
  */
 class MirrorMainActivity : ComponentActivity() {
 
@@ -93,7 +93,7 @@ class MirrorMainActivity : ComponentActivity() {
                     MirrorCockpitScreen(
                         state = receiverState,
                         videoDecoder = bridgeReceiver.videoDecoder,
-                        onSetPhoneBridgeIp = { ip -> bridgeReceiver.setConfiguredPhoneIp(ip) },
+                        onSetBridgeIp = { ip -> bridgeReceiver.setConfiguredBridgeIp(ip) },
                         onSetUnitSystem = { unitSystem -> bridgeReceiver.setUnitSystem(unitSystem) },
                         onSetHudEnabled = { enabled -> bridgeReceiver.setHudEnabled(enabled) },
                         onSetHudOpacity = { opacity -> bridgeReceiver.setHudOpacity(opacity) },
@@ -114,7 +114,7 @@ class MirrorMainActivity : ComponentActivity() {
 fun MirrorCockpitScreen(
     state: MirrorReceiverState,
     videoDecoder: H264VideoDecoder?,
-    onSetPhoneBridgeIp: (String) -> Unit,
+    onSetBridgeIp: (String) -> Unit,
     onSetUnitSystem: (UnitSystem) -> Unit,
     onSetHudEnabled: (Boolean) -> Unit,
     onSetHudOpacity: (Float) -> Unit,
@@ -136,12 +136,12 @@ fun MirrorCockpitScreen(
 
     if (showSettingsDialog) {
         MirrorSettingsDialog(
-            configuredIp = state.configuredPhoneIp,
+            configuredIp = state.configuredBridgeIp,
             unitSystem = state.unitSystem,
             isHudEnabled = state.isHudEnabled,
             hudOpacity = state.hudOpacity,
-            onApplyPhoneIp = { ipAddress ->
-                onSetPhoneBridgeIp(ipAddress)
+            onApplyBridgeIp = { ipAddress ->
+                onSetBridgeIp(ipAddress)
                 showSettingsDialog = false
             },
             onSelectUnitSystem = { unitSystem ->
@@ -239,12 +239,12 @@ fun MirrorCockpitScreen(
                     ) {
                         Text(
                             text = when {
-                                state.phoneBridgeIp != null ->
-                                    "Connected to Phone Bridge (${state.phoneBridgeIp}) — awaiting H.264 keyframe…"
-                                state.configuredPhoneIp.isNotEmpty() ->
-                                    "Sending unicast heartbeat to ${state.configuredPhoneIp}:5600…"
+                                state.bridgeIp != null ->
+                                    "Connected to Bridge (${state.bridgeIp}) — awaiting H.264 keyframe…"
+                                state.configuredBridgeIp.isNotEmpty() ->
+                                    "Sending unicast heartbeat to ${state.configuredBridgeIp}:5600…"
                                 else ->
-                                    "Waiting for Phone Bridge mDNS service (_drone-bridge._udp.)…"
+                                    "Waiting for Bridge mDNS service (_drone-bridge._udp.)…"
                             },
                             style = MaterialTheme.typography.titleMedium,
                             fontFamily = FontFamily.Monospace,
@@ -304,7 +304,7 @@ fun MirrorCockpitScreen(
                                 color = Color(0xFFF85149),
                             )
                             Text(
-                                text = "Reconnecting to Phone Bridge…",
+                                text = "Reconnecting to Bridge…",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontFamily = FontFamily.Monospace,
                                 color = Color.White.copy(alpha = 0.85f),
@@ -342,7 +342,7 @@ private fun MirrorSettingsDialog(
     unitSystem: UnitSystem,
     isHudEnabled: Boolean,
     hudOpacity: Float,
-    onApplyPhoneIp: (String) -> Unit,
+    onApplyBridgeIp: (String) -> Unit,
     onSelectUnitSystem: (UnitSystem) -> Unit,
     onSetHudEnabled: (Boolean) -> Unit,
     onSetHudOpacity: (Float) -> Unit,
@@ -437,12 +437,12 @@ private fun MirrorSettingsDialog(
                 HorizontalDivider()
 
                 Text(
-                    text = "Phone Bridge Connection",
+                    text = "Bridge Connection",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = "The app automatically discovers the Phone Bridge over mDNS. If auto-discovery is unavailable on your Wi-Fi network, enter the Phone's IPv4 address below.",
+                    text = "The app automatically discovers the Bridge over mDNS. If auto-discovery is unavailable on your Wi-Fi network, enter the bridge device's IPv4 address below.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -451,7 +451,7 @@ private fun MirrorSettingsDialog(
                     onValueChange = { textValue = it },
                     label = {
                         Text(
-                            text = "Phone Bridge IPv4",
+                            text = "Bridge IPv4",
                             style = MaterialTheme.typography.labelSmall,
                         )
                     },
@@ -488,7 +488,7 @@ private fun MirrorSettingsDialog(
                     keyboardActions = KeyboardActions(
                         onDone = {
                             focusManager.clearFocus()
-                            onApplyPhoneIp(textValue)
+                            onApplyBridgeIp(textValue)
                         },
                     ),
                     modifier = Modifier.fillMaxWidth(),
@@ -499,7 +499,7 @@ private fun MirrorSettingsDialog(
             Button(
                 onClick = {
                     focusManager.clearFocus()
-                    onApplyPhoneIp(textValue)
+                    onApplyBridgeIp(textValue)
                 },
                 enabled = textValue.isNotBlank(),
             ) {
@@ -512,7 +512,7 @@ private fun MirrorSettingsDialog(
                     OutlinedButton(
                         onClick = {
                             focusManager.clearFocus()
-                            onApplyPhoneIp("")
+                            onApplyBridgeIp("")
                         },
                     ) {
                         Text(text = "Reset to Auto")
@@ -697,7 +697,7 @@ private fun BottomStatusBar(
         0.0
     }
     val wifiIconColor = when {
-        state.phoneBridgeIp == null -> Color.White.copy(alpha = 0.4f)
+        state.bridgeIp == null -> Color.White.copy(alpha = 0.4f)
         state.udpSequenceDrops == 0L || dropRate < 0.5 -> Color(0xFF3FB950)
         dropRate < 2.0 -> Color(0xFFD29922)
         else -> Color(0xFFF85149)

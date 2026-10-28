@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 private const val TAG = "NsdBridgeManager"
 
 /**
- * Publishes the Phone Bridge service over mDNS / DNS-SD using [NsdManager] so viewer
+ * Publishes the Bridge service over mDNS / DNS-SD using [NsdManager] so viewer
  * clients on the local Wi-Fi network can discover it without manual IP entry.
  */
 class NsdBridgeServer(
@@ -89,7 +89,7 @@ class NsdBridgeServer(
 }
 
 /**
- * Discovers and resolves Phone Bridge services on the local network via [NsdManager].
+ * Discovers and resolves Bridge services on the local network via [NsdManager].
  *
  * Resolves discovered services sequentially to avoid `NsdManager.FAILURE_ALREADY_ACTIVE`
  * errors on Android platforms that only support a single concurrent resolve operation.

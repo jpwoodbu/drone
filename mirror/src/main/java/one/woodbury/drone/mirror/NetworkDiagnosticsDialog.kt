@@ -19,7 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 /**
- * Modal dialog displaying detailed Phone-to-Mirror UDP bridge connection and network diagnostics.
+ * Modal dialog displaying detailed Bridge-to-Mirror UDP bridge connection and network diagnostics.
  */
 @Composable
 fun NetworkDiagnosticsDialog(
@@ -44,16 +44,16 @@ fun NetworkDiagnosticsDialog(
                     .verticalScroll(scrollState),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                val bridgeIpText = state.phoneBridgeIp?.let { "$it:5600" }
-                    ?: if (state.configuredPhoneIp.isNotEmpty()) {
-                        "Searching for ${state.configuredPhoneIp}:5600"
+                val bridgeIpText = state.bridgeIp?.let { "$it:5600" }
+                    ?: if (state.configuredBridgeIp.isNotEmpty()) {
+                        "Searching for ${state.configuredBridgeIp}:5600"
                     } else {
                         "Searching on :5600…"
                     }
                 NetworkRow(
                     label = "Bridge Connection IP",
                     value = bridgeIpText,
-                    highlight = state.phoneBridgeIp != null,
+                    highlight = state.bridgeIp != null,
                 )
 
                 val totalPackets = state.udpPacketsReceived + state.udpSequenceDrops
@@ -63,7 +63,7 @@ fun NetworkDiagnosticsDialog(
                     0.0
                 }
                 val (qualityText, qualityColor) = when {
-                    state.phoneBridgeIp == null -> "DISCONNECTED" to Color.White.copy(alpha = 0.5f)
+                    state.bridgeIp == null -> "DISCONNECTED" to Color.White.copy(alpha = 0.5f)
                     state.udpSequenceDrops == 0L -> "EXCELLENT (0 drops)" to Color(0xFF3FB950)
                     dropRate < 1.0 -> "GOOD (%.2f%% drop rate)".format(dropRate) to Color(0xFF3FB950)
                     dropRate < 2.0 -> "DEGRADED (%.1f%% loss)".format(dropRate) to Color(0xFFD29922)
@@ -73,12 +73,12 @@ fun NetworkDiagnosticsDialog(
                     label = "Stream Quality",
                     value = qualityText,
                     valueColor = qualityColor,
-                    highlight = state.phoneBridgeIp != null && dropRate < 1.0,
+                    highlight = state.bridgeIp != null && dropRate < 1.0,
                 )
 
                 NetworkRow(
                     label = "Manual Target IP",
-                    value = if (state.configuredPhoneIp.isNotEmpty()) state.configuredPhoneIp else "None (Auto mDNS)",
+                    value = if (state.configuredBridgeIp.isNotEmpty()) state.configuredBridgeIp else "None (Auto mDNS)",
                 )
 
                 val localIpText = if (state.localIpv4Addresses.isEmpty()) {

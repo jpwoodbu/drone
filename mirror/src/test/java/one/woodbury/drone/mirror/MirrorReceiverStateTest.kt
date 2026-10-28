@@ -17,7 +17,7 @@ class MirrorReceiverStateTest {
         assertEquals(0L, state.udpSequenceDrops)
         assertEquals(0L, state.dumlFramesReceived)
         assertEquals(0L, state.heartbeatsSent)
-        assertNull(state.phoneBridgeIp)
+        assertNull(state.bridgeIp)
         assertFalse(state.isListening)
         assertFalse(state.isConnected)
         assertFalse(state.isReconnecting)
@@ -41,17 +41,17 @@ class MirrorReceiverStateTest {
     @Test
     fun connectionStatusProperties_reflectBridgeState() {
         val connectedState = MirrorReceiverState(
-            phoneBridgeIp = "192.168.1.50",
+            bridgeIp = "192.168.1.50",
             videoDecoderMetrics = VideoDecoderMetrics(framesDecoded = 120L),
         )
         assertTrue(connectedState.isConnected)
         assertFalse(connectedState.isReconnecting)
 
-        val reconnectingState = connectedState.copy(phoneBridgeIp = null)
+        val reconnectingState = connectedState.copy(bridgeIp = null)
         assertFalse(reconnectingState.isConnected)
         assertTrue(reconnectingState.isReconnecting)
 
-        val restoredState = reconnectingState.copy(phoneBridgeIp = "192.168.1.50")
+        val restoredState = reconnectingState.copy(bridgeIp = "192.168.1.50")
         assertTrue(restoredState.isConnected)
         assertFalse(restoredState.isReconnecting)
     }
@@ -59,7 +59,7 @@ class MirrorReceiverStateTest {
     @Test
     fun initialSearchingState_isNotReconnectingBeforeFramesDecoded() {
         val initialSearchingState = MirrorReceiverState(
-            phoneBridgeIp = null,
+            bridgeIp = null,
             videoDecoderMetrics = VideoDecoderMetrics(framesDecoded = 0L),
         )
         assertFalse(initialSearchingState.isConnected)

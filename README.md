@@ -61,7 +61,7 @@ drone/
 
 3. **`:mirror`**:
    - Runs on another Android device (e.g. Meta Quest VR headset).
-   - Discovers the phone bridge automatically over the local Wi-Fi via mDNS and
+   - Discovers the bridge automatically over the local Wi-Fi via mDNS and
      transmits 1 Hz keepalive heartbeats to port `5600`.
    - Decodes H.264 video using hardware `MediaCodec` and displays it onto a
      Compose/Surface texture.

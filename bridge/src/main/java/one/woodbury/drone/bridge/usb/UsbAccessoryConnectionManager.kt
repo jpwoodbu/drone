@@ -82,7 +82,7 @@ data class LastDumlPacketInfo(
  */
 data class BridgeMainScreenState(
     val connectionPhase: ConnectionPhase = ConnectionPhase.DISCONNECTED,
-    val statusMessage: String = "No USB accessory connected. Unplug the side slider cable on the remote controller and connect its bottom USB-A port to this phone.",
+    val statusMessage: String = "No USB accessory connected. Unplug the side slider cable on the remote controller and connect its bottom USB-A port to this device.",
     val accessoryDescriptor: UsbAccessoryDescriptor? = null,
     val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
     val udpBridgeMetrics: UdpBridgeSenderMetrics = UdpBridgeSenderMetrics(),
