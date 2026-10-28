@@ -1,13 +1,20 @@
 package one.woodbury.drone.bridge
 
+import android.Manifest
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -39,19 +46,26 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import one.woodbury.drone.bridge.ui.theme.DroneTheme
 import one.woodbury.drone.bridge.usb.BridgeMainScreenState
 import one.woodbury.drone.bridge.usb.ConnectionPhase
@@ -64,6 +78,21 @@ import one.woodbury.drone.flight.FlightDynamicsCalculator
 import one.woodbury.drone.protocol.DumlProtocol
 import one.woodbury.drone.protocol.RemoteControllerAxes
 import one.woodbury.drone.video.H264VideoDecoder
+
+/**
+ * Returns true if the app has permission to post notifications.
+ * On Android 12 and below, this permission is granted automatically at installation.
+ */
+private fun hasNotificationPermission(context: Context): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+    } else {
+        true
+    }
+}
 
 /**
  * Screen identifiers for navigation within `:bridge`.
@@ -89,6 +118,36 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             DroneTheme {
+                val context = LocalContext.current
+                var hasNotificationPermissionState by remember {
+                    mutableStateOf(hasNotificationPermission(context))
+                }
+
+                val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestPermission(),
+                ) { isGranted ->
+                    hasNotificationPermissionState = isGranted
+                }
+
+                val lifecycleOwner = LocalLifecycleOwner.current
+                DisposableEffect(lifecycleOwner) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            hasNotificationPermissionState = hasNotificationPermission(context)
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose {
+                        lifecycleOwner.lifecycle.removeObserver(observer)
+                    }
+                }
+
+                LaunchedEffect(Unit) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermissionState) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
+
                 var currentScreen by rememberSaveable { mutableStateOf(BridgeScreen.MAIN) }
 
                 BackHandler(enabled = currentScreen != BridgeScreen.MAIN) {
@@ -115,6 +174,10 @@ class MainActivity : ComponentActivity() {
                                 mainState = mainScreenState,
                                 telemetryState = telemetryState,
                                 videoDecoder = connectionManager.videoDecoder,
+                                hasNotificationPermission = hasNotificationPermissionState,
+                                onRequestNotificationPermission = {
+                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                },
                                 onSetVideoPreviewEnabled = { isEnabled ->
                                     connectionManager.isVideoPreviewEnabled = isEnabled
                                 },
@@ -169,6 +232,8 @@ fun ControllerDiagnosticsScreen(
     mainState: BridgeMainScreenState,
     telemetryState: TelemetryState,
     videoDecoder: H264VideoDecoder? = null,
+    hasNotificationPermission: Boolean = true,
+    onRequestNotificationPermission: () -> Unit = {},
     onSetVideoPreviewEnabled: (Boolean) -> Unit,
     onDisconnectSubscribersClicked: () -> Unit,
     onResumeSubscribersClicked: () -> Unit,
@@ -187,6 +252,10 @@ fun ControllerDiagnosticsScreen(
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
         )
+
+        if (!hasNotificationPermission) {
+            NotificationPermissionCard(onRequestPermission = onRequestNotificationPermission)
+        }
 
         ConnectionStatusCard(state = mainState)
 
@@ -465,6 +534,56 @@ private fun LiveVideoFeedCard(
                         "Idle (0 frames)"
                     },
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotificationPermissionCard(
+    onRequestPermission: () -> Unit,
+) {
+    val context = LocalContext.current
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.notification_permission_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Text(
+                text = stringResource(R.string.notification_permission_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = onRequestPermission,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(text = stringResource(R.string.notification_permission_button))
+                }
+                OutlinedButton(
+                    onClick = {
+                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        }
+                        context.startActivity(intent)
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(text = stringResource(R.string.notification_permission_settings_button))
+                }
             }
         }
     }

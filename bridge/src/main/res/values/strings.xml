@@ -6,4 +6,8 @@
     <string name="bridge_notification_paused">Bridge active — streaming paused</string>
     <string name="bridge_notification_channel_name">Drone Bridge Service</string>
     <string name="bridge_notification_channel_description">Maintains USB and Wi-Fi streaming while the device is locked.</string>
+    <string name="notification_permission_title">Notifications Disabled</string>
+    <string name="notification_permission_description">Drone Bridge requires notification permission to display streaming status and maintain background streaming while the device is locked in your pocket.</string>
+    <string name="notification_permission_button">Enable Notifications</string>
+    <string name="notification_permission_settings_button">Open Notification Settings</string>
 </resources>
