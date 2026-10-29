@@ -20,9 +20,9 @@ android {
     defaultConfig {
         applicationId = "one.woodbury.drone.bridge"
         minSdk = 29
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        targetSdk = 36
+        versionCode = 2026102802
+        versionName = "0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
