@@ -1,5 +1,7 @@
 # Drone: Mavic Air USB Bridge & Mirror
 
+![Bridge](bridge/src/main/res/mipmap-xhdpi/ic_launcher.png) ![Mirror](mirror/src/main/res/mipmap-xhdpi/ic_launcher.png)
+
 A multi-module Android project (i.e. two applications) for operating the DJI
 Mavic Air (possibly other DJI models too) using a VR headset for viewing the
 camera feed and telemetry, and the handheld DJI controller for flight control.
