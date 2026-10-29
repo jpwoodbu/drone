@@ -133,6 +133,7 @@ fun MirrorCockpitScreen(
     var showBatteryDialog by remember { mutableStateOf(false) }
     var showNetworkDialog by remember { mutableStateOf(false) }
     var showFlightModesDialog by remember { mutableStateOf(false) }
+    var showCameraModeDialog by remember { mutableStateOf(false) }
 
     val toggleUnitSystem = {
         val nextSystem = if (state.unitSystem == UnitSystem.METRIC) {
@@ -184,6 +185,13 @@ fun MirrorCockpitScreen(
         FlightModesDialog(
             currentFlightMode = state.flightControllerTelemetry?.flightMode,
             onDismiss = { showFlightModesDialog = false },
+        )
+    }
+
+    if (showCameraModeDialog) {
+        CameraModeDialog(
+            cameraTelemetry = state.cameraTelemetry,
+            onDismiss = { showCameraModeDialog = false },
         )
     }
 
@@ -341,6 +349,7 @@ fun MirrorCockpitScreen(
             onOpenNetworkDiagnostics = { showNetworkDialog = true },
             onOpenSettings = { showSettingsDialog = true },
             onOpenFlightModes = { showFlightModesDialog = true },
+            onOpenCameraMode = { showCameraModeDialog = true },
         )
     }
 }
@@ -682,6 +691,7 @@ private fun BottomStatusBar(
     onOpenNetworkDiagnostics: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenFlightModes: () -> Unit,
+    onOpenCameraMode: () -> Unit,
 ) {
     val metrics = state.videoDecoderMetrics
     val fpsText = if (metrics.framesPerSecond > 0f) "%.1f fps".format(metrics.framesPerSecond) else "— fps"
@@ -828,6 +838,9 @@ private fun BottomStatusBar(
                 ComposeSurface(
                     color = Color(0xFF21262D),
                     shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable(onClick = onOpenCameraMode),
                 ) {
                     Text(
                         text = if (isVideoMode) "VIDEO" else "PHOTO",
