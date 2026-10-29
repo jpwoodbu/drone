@@ -1,0 +1,32 @@
+<b>IMPORTANT DISCLAIMER</b>
+
+<b>Drone Mirror</b> is an independent open-source project and is neither affiliated with, authorized, sponsored, endorsed, nor supported by SZ DJI Technology Co., Ltd. or Meta Platforms, Inc. or any of their affiliates. All trademarks are the property of their respective owners.
+
+<b>Drone Mirror</b> is specifically developed for the DJI Mavic Air (WM230) aircraft and its standard remote controller (model S01A). It is not known to be compatible with other aircraft models or remote controllers.
+
+<b>OVERVIEW</b>
+
+<b>Drone Mirror</b> is a low-latency viewer application that displays live camera video and flight telemetry relayed over your local Wi-Fi or mobile hotspot from the companion <b>Drone Bridge</b> app.
+
+The DJI Mavic Air remote controller communicates over USB using the Android Open Accessory (AOA) protocol. Because Android-based VR headsets—such as Meta Quest—do not support AOA mode, they cannot connect directly to the controller. The companion <b>Drone Bridge</b> app solves this by running on an Android device plugged into the remote controller via USB, relaying the live video and telemetry stream over Wi-Fi to <b>Drone Mirror</b>.
+
+Designed as a standard 2D flat Android application and available on both Google Play and the Meta Horizon Store, <b>Drone Mirror</b> is ideal for use with a VR headset in passthrough mode, floating like a display in front of you. By receiving video and telemetry wirelessly, it allows you to view your flight feed without tethering your display device directly to the physical remote controller.
+
+<b>KEY MIRROR FEATURES</b>
+
+* Low-Latency Video: Decodes incoming video streams directly using hardware acceleration for smooth, responsive flight viewing.
+* Real-Time Telemetry HUD: Features an optional Heads-Up Display (HUD) overlay and a dedicated top status bar displaying altitude, speed, distance from home, battery percentage, GPS satellite lock, pitch/roll attitude, compass heading, and gimbal pitch.
+* Diagnostics & Stream Health: The bottom status bar provides live stream metrics including video resolution, bitrate, framerate, recording duration, and network packet drop statistics.
+* Detailed Diagnostic Dialogs: Tap metrics to inspect detailed readouts, including individual battery cell voltages, flight mode descriptions, camera settings, and real-time network connection health.
+* Composition Grid Overlay: Quickly toggle a rule-of-thirds composition framing grid directly from the remote controller's C button.
+* Automatic Discovery: Automatically locates the bridge device across your local Wi-Fi or mobile hotspot, with manual IP address configuration available as a fallback.
+* Metric & Imperial Support: Seamlessly switch between metric and imperial flight measurement units with a single tap.
+* No Virtual Controls: Flight control remains completely managed by the physical DJI remote controller. Neither <b>Drone Mirror</b> nor <b>Drone Bridge</b> provides virtual flight sticks on screen.
+* Zero Data Collection: Drone Mirror does not collect, track, or transmit any telemetry, video, or personal data to the internet or third-party servers. All data remains strictly on your local network.
+
+<b>REQUIREMENTS</b>
+
+* Aircraft: DJI Mavic Air (WM230)
+* Remote Controller: DJI S01A Remote Controller
+* Companion App: <b>Drone Bridge</b> (available on Google Play) running on the Android device connected via USB to the remote controller
+* Network: Both devices connected to the same Wi-Fi network or mobile hotspot
