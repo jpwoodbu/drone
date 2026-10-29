@@ -4,8 +4,10 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -95,6 +97,36 @@ private fun hasNotificationPermission(context: Context): Boolean {
 }
 
 /**
+ * Returns true if battery optimization is disabled for this app.
+ */
+private fun isIgnoringBatteryOptimizations(context: Context): Boolean {
+    val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+    return powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: true
+}
+
+/**
+ * Requests disabling battery optimization via direct prompt or system settings.
+ */
+private fun requestIgnoreBatteryOptimization(context: Context) {
+    try {
+        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = Uri.parse("package:${context.packageName}")
+        }
+        context.startActivity(intent)
+    } catch (_: Exception) {
+        try {
+            val fallbackIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+            context.startActivity(fallbackIntent)
+        } catch (_: Exception) {
+            val appDetailsIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:${context.packageName}")
+            }
+            context.startActivity(appDetailsIntent)
+        }
+    }
+}
+
+/**
  * Screen identifiers for navigation within `:bridge`.
  */
 enum class BridgeScreen {
@@ -122,6 +154,12 @@ class MainActivity : ComponentActivity() {
                 var hasNotificationPermissionState by remember {
                     mutableStateOf(hasNotificationPermission(context))
                 }
+                var isIgnoringBatteryOptimizationsState by remember {
+                    mutableStateOf(isIgnoringBatteryOptimizations(context))
+                }
+                var isBatteryOptimizationCardDismissed by rememberSaveable {
+                    mutableStateOf(false)
+                }
 
                 val notificationPermissionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestPermission(),
@@ -134,6 +172,7 @@ class MainActivity : ComponentActivity() {
                     val observer = LifecycleEventObserver { _, event ->
                         if (event == Lifecycle.Event.ON_RESUME) {
                             hasNotificationPermissionState = hasNotificationPermission(context)
+                            isIgnoringBatteryOptimizationsState = isIgnoringBatteryOptimizations(context)
                         }
                     }
                     lifecycleOwner.lifecycle.addObserver(observer)
@@ -177,6 +216,14 @@ class MainActivity : ComponentActivity() {
                                 hasNotificationPermission = hasNotificationPermissionState,
                                 onRequestNotificationPermission = {
                                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                },
+                                isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizationsState,
+                                isBatteryOptimizationCardDismissed = isBatteryOptimizationCardDismissed,
+                                onRequestBatteryOptimizationExemption = {
+                                    requestIgnoreBatteryOptimization(context)
+                                },
+                                onDismissBatteryOptimizationCard = {
+                                    isBatteryOptimizationCardDismissed = true
                                 },
                                 onSetVideoPreviewEnabled = { isEnabled ->
                                     connectionManager.isVideoPreviewEnabled = isEnabled
@@ -234,6 +281,10 @@ fun ControllerDiagnosticsScreen(
     videoDecoder: H264VideoDecoder? = null,
     hasNotificationPermission: Boolean = true,
     onRequestNotificationPermission: () -> Unit = {},
+    isIgnoringBatteryOptimizations: Boolean = true,
+    isBatteryOptimizationCardDismissed: Boolean = false,
+    onRequestBatteryOptimizationExemption: () -> Unit = {},
+    onDismissBatteryOptimizationCard: () -> Unit = {},
     onSetVideoPreviewEnabled: (Boolean) -> Unit,
     onDisconnectSubscribersClicked: () -> Unit,
     onResumeSubscribersClicked: () -> Unit,
@@ -255,6 +306,13 @@ fun ControllerDiagnosticsScreen(
 
         if (!hasNotificationPermission) {
             NotificationPermissionCard(onRequestPermission = onRequestNotificationPermission)
+        }
+
+        if (!isIgnoringBatteryOptimizations && !isBatteryOptimizationCardDismissed) {
+            BatteryOptimizationCard(
+                onRequestOptimizationExemption = onRequestBatteryOptimizationExemption,
+                onDismiss = onDismissBatteryOptimizationCard,
+            )
         }
 
         ConnectionStatusCard(state = mainState)
@@ -583,6 +641,51 @@ private fun NotificationPermissionCard(
                     modifier = Modifier.weight(1f),
                 ) {
                     Text(text = stringResource(R.string.notification_permission_settings_button))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BatteryOptimizationCard(
+    onRequestOptimizationExemption: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.battery_optimization_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Text(
+                text = stringResource(R.string.battery_optimization_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = onRequestOptimizationExemption,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(text = stringResource(R.string.battery_optimization_button))
+                }
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(text = stringResource(R.string.battery_optimization_dismiss))
                 }
             }
         }
