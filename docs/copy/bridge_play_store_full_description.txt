@@ -1,0 +1,30 @@
+<b>IMPORTANT DISCLAIMER</b>
+
+<b>Drone Bridge</b> is an independent open-source project and is neither affiliated with, authorized, sponsored, endorsed, nor supported by SZ DJI Technology Co., Ltd. or Meta Platforms, Inc or any of their affiliates. All trademarks are the property of their respective owners.
+
+<b>Drone Bridge</b> is specifically developed for the DJI Mavic Air (WM230) aircraft and its standard remote controller (model S01A). It is not known to be compatible with other aircraft models or remote controllers.
+
+<b>OVERVIEW</b>
+
+<b>Drone Bridge</b> serves as a communication gateway between your DJI Mavic Air remote controller and the free <b>Drone Mirror</b> viewer app over your local Wi-Fi or mobile hotspot.
+
+While standalone Android VR headsets—such as Meta Quest—provide a great platform for viewing flight telemetry and video, they do not support the Android Open Accessory (AOA) mode needed for the Mavic Air remote controller.
+
+<b>Drone Bridge</b> bridges this gap. Your Android device connects to the USB port of the DJI remote controller, receives flight telemetry and video, and relays that data across your local Wi-Fi or hotspot to the companion <b>Drone Mirror</b> app (available for free on Google Play and the Meta Horizon Store) for it to display.
+
+<b>KEY BRIDGE FEATURES</b>
+
+* Real-Time Video & Telemetry Relay: Forwards live video and flight telemetry from the remote controller to the Drone Mirror app with minimal latency. Relayed data can also be previewed within the Drone Bridge app.
+* Flight control is completely managed by the physical DJI remote controller: Neither <b>Drone Bridge</b> or its companion app, <b>Drone Mirror</b> provide virtual flight control sticks or any other kind of flight controls.
+* Photos and Videos while in-flight: Use the DJI remote controller video and shutter buttons to take videos and photos while in-flight.
+* Persistent Foreground Service: Keeps communication active even when the screen is turned off or you switch to another app.
+* Live Diagnostics: Displays USB connection state and network statistics
+* Zero Data Collection: Drone Bridge does not collect, track, or upload any telemetry or personal data. All data remains strictly on your local network.
+
+<b>REQUIREMENTS</b>
+
+* Aircraft: DJI Mavic Air (WM230)
+* Remote Controller: DJI S01A Remote Controller
+* Physical Connection: USB cable connecting your Android device to the USB port of the remote controller
+* Network: Both devices connected to the same Wi-Fi network or mobile hotspot
+* Companion App: <b>Drone Mirror</b> (available for free on Google Play and the Meta Horizon Store)
