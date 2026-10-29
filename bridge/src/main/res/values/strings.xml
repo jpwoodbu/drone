@@ -6,10 +6,10 @@
     <string name="bridge_notification_paused">Bridge active — streaming paused</string>
     <string name="bridge_notification_channel_name">Drone Bridge Service</string>
     <string name="bridge_notification_channel_description">Maintains USB and Wi-Fi streaming while the device is locked.</string>
-    <string name="notification_permission_title">Notifications Disabled</string>
-    <string name="notification_permission_description">Drone Bridge requires notification permission to display streaming status and maintain background streaming while the device is locked in your pocket.</string>
-    <string name="notification_permission_button">Enable Notifications</string>
-    <string name="notification_permission_settings_button">Open Notification Settings</string>
+    <string name="notification_primer_dialog_title">Streaming Status Notifications</string>
+    <string name="notification_primer_dialog_description">Drone Bridge streams video and telemetry in the background even when your device screen is locked. Notifications allow the app to indicate when background streaming is active and display your current connection status.</string>
+    <string name="notification_primer_continue_button">Continue</string>
+    <string name="notification_primer_not_now_button">Not Now</string>
     <string name="battery_optimization_title">Battery Optimization Active</string>
     <string name="battery_optimization_description">To prevent the device from suspending USB and Wi-Fi streaming when the screen is locked in your pocket, allow Drone Bridge to run unrestricted in the background.</string>
     <string name="battery_optimization_button">Disable Optimization</string>

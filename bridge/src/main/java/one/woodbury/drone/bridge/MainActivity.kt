@@ -131,6 +131,7 @@ private fun requestIgnoreBatteryOptimization(context: Context) {
 
 private const val PREFS_NAME = "drone_bridge_prefs"
 private const val PREF_KEY_DISCLAIMER_ACCEPTED = "disclaimer_accepted"
+private const val PREF_KEY_NOTIFICATION_PRIMER_SHOWN = "notification_primer_shown"
 
 /**
  * Returns true if the user has accepted the safety and legal disclaimer.
@@ -147,6 +148,24 @@ private fun setDisclaimerAccepted(context: Context, accepted: Boolean = true) {
     context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         .edit()
         .putBoolean(PREF_KEY_DISCLAIMER_ACCEPTED, accepted)
+        .apply()
+}
+
+/**
+ * Returns true if the notification primer dialog has already been shown.
+ */
+private fun isNotificationPrimerShown(context: Context): Boolean {
+    return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getBoolean(PREF_KEY_NOTIFICATION_PRIMER_SHOWN, false)
+}
+
+/**
+ * Persists whether the notification primer dialog has been shown.
+ */
+private fun setNotificationPrimerShown(context: Context, shown: Boolean = true) {
+    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(PREF_KEY_NOTIFICATION_PRIMER_SHOWN, shown)
         .apply()
 }
 
@@ -202,6 +221,13 @@ class MainActivity : ComponentActivity() {
                 var hasNotificationPermissionState by remember {
                     mutableStateOf(hasNotificationPermission(context))
                 }
+                var showNotificationPrimerDialog by rememberSaveable {
+                    mutableStateOf(
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            !hasNotificationPermission(context) &&
+                            !isNotificationPrimerShown(context)
+                    )
+                }
                 var isIgnoringBatteryOptimizationsState by remember {
                     mutableStateOf(isIgnoringBatteryOptimizations(context))
                 }
@@ -229,10 +255,18 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                LaunchedEffect(Unit) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermissionState) {
-                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    }
+                if (hasAcceptedDisclaimerState && showNotificationPrimerDialog && !hasNotificationPermissionState) {
+                    NotificationPrimerDialog(
+                        onContinue = {
+                            setNotificationPrimerShown(context, true)
+                            showNotificationPrimerDialog = false
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        },
+                        onDismiss = {
+                            setNotificationPrimerShown(context, true)
+                            showNotificationPrimerDialog = false
+                        },
+                    )
                 }
 
                 var currentScreen by rememberSaveable { mutableStateOf(BridgeScreen.MAIN) }
@@ -261,10 +295,6 @@ class MainActivity : ComponentActivity() {
                                 mainState = mainScreenState,
                                 telemetryState = telemetryState,
                                 videoDecoder = connectionManager.videoDecoder,
-                                hasNotificationPermission = hasNotificationPermissionState,
-                                onRequestNotificationPermission = {
-                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                },
                                 isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizationsState,
                                 isBatteryOptimizationCardDismissed = isBatteryOptimizationCardDismissed,
                                 onRequestBatteryOptimizationExemption = {
@@ -328,8 +358,6 @@ fun ControllerDiagnosticsScreen(
     mainState: BridgeMainScreenState,
     telemetryState: TelemetryState,
     videoDecoder: H264VideoDecoder? = null,
-    hasNotificationPermission: Boolean = true,
-    onRequestNotificationPermission: () -> Unit = {},
     isIgnoringBatteryOptimizations: Boolean = true,
     isBatteryOptimizationCardDismissed: Boolean = false,
     onRequestBatteryOptimizationExemption: () -> Unit = {},
@@ -353,10 +381,6 @@ fun ControllerDiagnosticsScreen(
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
         )
-
-        if (!hasNotificationPermission) {
-            NotificationPermissionCard(onRequestPermission = onRequestNotificationPermission)
-        }
 
         if (!isIgnoringBatteryOptimizations && !isBatteryOptimizationCardDismissed) {
             BatteryOptimizationCard(
@@ -659,56 +683,6 @@ private fun LiveVideoFeedCard(
 }
 
 @Composable
-private fun NotificationPermissionCard(
-    onRequestPermission: () -> Unit,
-) {
-    val context = LocalContext.current
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.notification_permission_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-            )
-            Text(
-                text = stringResource(R.string.notification_permission_description),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(
-                    onClick = onRequestPermission,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(text = stringResource(R.string.notification_permission_button))
-                }
-                OutlinedButton(
-                    onClick = {
-                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                        }
-                        context.startActivity(intent)
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(text = stringResource(R.string.notification_permission_settings_button))
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun BatteryOptimizationCard(
     onRequestOptimizationExemption: () -> Unit,
     onDismiss: () -> Unit,
@@ -815,6 +789,43 @@ fun DisclaimerDialog(
                 ) {
                     Text(text = stringResource(R.string.disclaimer_close_button))
                 }
+            }
+        },
+    )
+}
+
+@Composable
+private fun NotificationPrimerDialog(
+    onContinue: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.notification_primer_dialog_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        text = {
+            Text(
+                text = stringResource(R.string.notification_primer_dialog_description),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onContinue,
+            ) {
+                Text(text = stringResource(R.string.notification_primer_continue_button))
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+            ) {
+                Text(text = stringResource(R.string.notification_primer_not_now_button))
             }
         },
     )
