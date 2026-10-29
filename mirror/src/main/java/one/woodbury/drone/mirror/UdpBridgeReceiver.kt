@@ -1,8 +1,13 @@
 package one.woodbury.drone.mirror
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.os.SystemClock
+import android.util.Log
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -30,6 +35,8 @@ import one.woodbury.drone.protocol.GimbalTelemetry
 import one.woodbury.drone.protocol.RemoteControllerAxes
 import one.woodbury.drone.video.H264VideoDecoder
 import one.woodbury.drone.video.VideoDecoderMetrics
+
+private const val TAG = "UdpBridgeReceiver"
 
 /**
  * Immutable UI state for the Mirror Viewer (`:mirror`).
@@ -171,6 +178,13 @@ class UdpBridgeReceiver(
     @Volatile
     private var nsdClient: NsdBridgeClient? = null
 
+    /** The Wi-Fi [Network] that [udpSocket] is currently bound to, or null for default routing. */
+    @Volatile
+    private var boundNetwork: Network? = null
+
+    @Volatile
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+
     @Volatile
     private var latestBridgeInetAddress: InetAddress? = null
 
@@ -275,13 +289,99 @@ class UdpBridgeReceiver(
     /**
      * Opens UDP port `5600`, acquires a Wi-Fi `MulticastLock`, starts the periodic `"DBHB"`
      * discovery broadcaster, and starts the `"DBDA"` stream receiver thread.
+     *
+     * Also registers a Wi-Fi [ConnectivityManager.NetworkCallback] so the UDP socket is rebound
+     * whenever the Wi-Fi [Network] changes (for example, after the device wakes from sleep).
      */
     @Synchronized
     fun start() {
         if (isRunning.get()) return
+        Log.i(TAG, "Starting UdpBridgeReceiver.")
         lastPacketReceivedTimestampMillis.set(0L)
+        disconnectedCyclesCounter.set(0L)
+        acquireMulticastLock()
+        if (!openTransport(UdpBridgeProtocol.findWifiNetwork(applicationContext))) {
+            releaseMulticastLock()
+            return
+        }
+
+        val client = NsdBridgeClient(
+            context = applicationContext,
+            onDeviceResolved = { hostAddress, _ ->
+                try {
+                    // Only record the resolved address as a heartbeat target. The connection is
+                    // considered established once an announce or data packet actually arrives, so
+                    // a stale mDNS resolution cannot fake a connected state.
+                    Log.i(TAG, "mDNS resolved candidate bridge address: $hostAddress.")
+                    val inetAddress = InetAddress.getByName(hostAddress)
+                    lastKnownBridgeAddress = inetAddress
+                    _receiverState.update { currentState ->
+                        currentState.copy(nsdStatus = "Resolved $hostAddress via mDNS")
+                    }
+                    val activeSocket = udpSocket
+                    if (activeSocket != null && _receiverState.value.bridgeIp == null) {
+                        sendUnicastHeartbeatTo(activeSocket, inetAddress)
+                    }
+                } catch (exception: Exception) {
+                    Log.w(TAG, "Error handling resolved mDNS host: $hostAddress", exception)
+                }
+            },
+            onStatusChanged = { status ->
+                _receiverState.update { currentState ->
+                    currentState.copy(nsdStatus = status)
+                }
+            },
+        )
+        nsdClient = client
+        client.startDiscovery()
+        registerWifiNetworkCallback()
+    }
+
+    /**
+     * Pauses the UDP receiver, heartbeat scheduler, `NetworkCallback`, `MulticastLock`, and
+     * resets connection state when the activity is stopped (e.g. headset removed or screen off).
+     */
+    @Synchronized
+    fun stop() {
+        if (!isRunning.get()) return
+        Log.i(TAG, "Stopping UdpBridgeReceiver.")
+        unregisterWifiNetworkCallback()
+        isRunning.set(false)
+        lastPacketReceivedTimestampMillis.set(0L)
+        latestBridgeInetAddress = null
+        lastKnownBridgeAddress = null
+        disconnectedCyclesCounter.set(0L)
+        socketStatusText = "Stopped"
+        nsdClient?.stopDiscovery()
+        nsdClient = null
+        closeTransport()
+        releaseMulticastLock()
+        videoDecoder.resetStream()
+        _receiverState.update { currentState ->
+            currentState.copy(
+                isListening = false,
+                socketStatus = "Stopped",
+                bridgeIp = null,
+                lastSocketError = null,
+            )
+        }
+    }
+
+    /**
+     * Completely shuts down the UDP receiver and releases hardware video decoder resources.
+     */
+    @Synchronized
+    fun shutdown() {
+        stop()
+        videoDecoder.shutdown()
+    }
+
+    /**
+     * Creates the UDP socket bound to port `5600` (and to [network] when non-null), then starts the
+     * heartbeat scheduler and receiver thread for it. Returns false if the socket cannot be bound.
+     */
+    private fun openTransport(network: Network?): Boolean {
         try {
-            acquireMulticastLock()
             val socket = DatagramSocket(null).apply {
                 reuseAddress = true
                 broadcast = true
@@ -289,23 +389,26 @@ class UdpBridgeReceiver(
                 soTimeout = 1_000
                 bind(InetSocketAddress("0.0.0.0", UdpBridgeProtocol.UDP_BRIDGE_PORT))
             }
-            val wifiNetwork = UdpBridgeProtocol.findWifiNetwork(applicationContext)
-            if (wifiNetwork != null) {
+            var isBoundToWifi = false
+            if (network != null) {
                 try {
-                    wifiNetwork.bindSocket(socket)
+                    network.bindSocket(socket)
+                    isBoundToWifi = true
                 } catch (_: Exception) {
                     // Proceed with default routing if binding to the Wi-Fi Network fails.
                 }
             }
+            boundNetwork = network
             udpSocket = socket
             isRunning.set(true)
-            socketStatusText = if (wifiNetwork != null) {
+            socketStatusText = if (isBoundToWifi) {
                 "Bound to 0.0.0.0:${UdpBridgeProtocol.UDP_BRIDGE_PORT} (Wi-Fi)"
             } else {
                 "Bound to 0.0.0.0:${UdpBridgeProtocol.UDP_BRIDGE_PORT}"
             }
             lastErrorText = null
-            refreshLocalInterfaces()
+            Log.i(TAG, "Opened transport: $socketStatusText (network: $network).")
+            refreshLocalInterfaces(force = true)
 
             val scheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
                 Thread(runnable, "dji-mirror-heartbeat").apply { isDaemon = true }
@@ -313,8 +416,12 @@ class UdpBridgeReceiver(
             heartbeatScheduler = scheduler
             scheduler.scheduleAtFixedRate(
                 {
-                    sendDiscoveryHeartbeats(socket)
-                    checkConnectionTimeout()
+                    try {
+                        sendDiscoveryHeartbeats(socket)
+                        checkConnectionTimeout()
+                    } catch (throwable: Throwable) {
+                        Log.e(TAG, "Unhandled exception in heartbeat scheduler task.", throwable)
+                    }
                 },
                 0L,
                 1_000L,
@@ -325,60 +432,23 @@ class UdpBridgeReceiver(
                 isDaemon = true
                 start()
             }
-
-            val client = NsdBridgeClient(
-                context = applicationContext,
-                onDeviceResolved = { hostAddress, _ ->
-                    try {
-                        val inetAddress = InetAddress.getByName(hostAddress)
-                        latestBridgeInetAddress = inetAddress
-                        lastKnownBridgeAddress = inetAddress
-                        lastPacketReceivedTimestampMillis.set(SystemClock.elapsedRealtime())
-                        disconnectedCyclesCounter.set(0L)
-                        _receiverState.update { currentState ->
-                            currentState.copy(
-                                bridgeIp = hostAddress,
-                                nsdStatus = "Resolved $hostAddress via mDNS",
-                            )
-                        }
-                        val activeSocket = udpSocket
-                        if (activeSocket != null) {
-                            sendUnicastHeartbeatTo(activeSocket, inetAddress)
-                        }
-                    } catch (_: Exception) {
-                        // Ignore resolution errors.
-                    }
-                },
-                onStatusChanged = { status ->
-                    _receiverState.update { currentState ->
-                        currentState.copy(nsdStatus = status)
-                    }
-                },
-            )
-            nsdClient = client
-            client.startDiscovery()
+            return true
         } catch (exception: Exception) {
             isRunning.set(false)
             socketStatusText = "Bind failed on :${UdpBridgeProtocol.UDP_BRIDGE_PORT}"
+            Log.e(TAG, "Failed to bind UDP socket on port ${UdpBridgeProtocol.UDP_BRIDGE_PORT}.", exception)
             recordSocketError("bind", exception)
-            releaseMulticastLock()
-            refreshLocalInterfaces()
+            refreshLocalInterfaces(force = true)
+            return false
         }
     }
 
     /**
-     * Stops the UDP receiver, heartbeat scheduler, `MulticastLock`, and hardware video decoder.
+     * Stops the heartbeat scheduler and receiver thread and closes the UDP socket. Closing the
+     * socket unblocks any pending `receive()` call so the receiver thread exits.
      */
-    @Synchronized
-    fun shutdown() {
-        isRunning.set(false)
-        lastPacketReceivedTimestampMillis.set(0L)
-        latestBridgeInetAddress = null
-        lastKnownBridgeAddress = null
-        disconnectedCyclesCounter.set(0L)
-        socketStatusText = "Stopped"
-        nsdClient?.stopDiscovery()
-        nsdClient = null
+    private fun closeTransport() {
+        Log.i(TAG, "Closing UDP transport.")
         heartbeatScheduler?.shutdownNow()
         heartbeatScheduler = null
         receiverThread?.interrupt()
@@ -386,13 +456,81 @@ class UdpBridgeReceiver(
 
         val socketToClose = udpSocket
         udpSocket = null
+        boundNetwork = null
         socketToClose?.close()
-        releaseMulticastLock()
-        videoDecoder.shutdown()
+    }
+
+    /**
+     * Tears down and recreates the UDP transport bound to [network], and restarts mDNS discovery.
+     *
+     * A socket bound to a Wi-Fi [Network] that has since been torn down (as happens when the device
+     * sleeps and Wi-Fi reconnects with a new [Network]) can no longer send heartbeats or receive
+     * datagrams, so it must be replaced rather than reused.
+     */
+    @Synchronized
+    private fun rebindTransport(network: Network?) {
+        // Ignore callbacks that race with or arrive after shutdown().
+        if (!isRunning.get() || networkCallback == null) return
+        Log.i(TAG, "Rebinding transport to network: $network.")
+        closeTransport()
+        lastPacketReceivedTimestampMillis.set(0L)
+        disconnectedCyclesCounter.set(0L)
+        if (_receiverState.value.bridgeIp != null) {
+            latestBridgeInetAddress = null
+            videoDecoder.resetStream()
+            _receiverState.update { currentState -> currentState.copy(bridgeIp = null) }
+        }
+        openTransport(network)
+        nsdClient?.restartDiscovery()
+    }
+
+    private fun registerWifiNetworkCallback() {
+        val connectivityManager =
+            applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                ?: return
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                Log.i(TAG, "Wi-Fi network callback onAvailable: $network.")
+                if (network != boundNetwork) {
+                    rebindTransport(network)
+                }
+            }
+
+            override fun onLost(network: Network) {
+                Log.i(TAG, "Wi-Fi network callback onLost: $network.")
+                if (network == boundNetwork) {
+                    // Fall back to default routing until a new Wi-Fi network becomes available.
+                    rebindTransport(null)
+                }
+            }
+        }
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .build()
+        try {
+            connectivityManager.registerNetworkCallback(request, callback)
+            networkCallback = callback
+            Log.i(TAG, "Registered Wi-Fi network callback.")
+        } catch (exception: Exception) {
+            Log.w(TAG, "Failed to register Wi-Fi network callback.", exception)
+        }
+    }
+
+    private fun unregisterWifiNetworkCallback() {
+        val callback = networkCallback ?: return
+        networkCallback = null
+        try {
+            val connectivityManager =
+                applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            connectivityManager?.unregisterNetworkCallback(callback)
+            Log.i(TAG, "Unregistered Wi-Fi network callback.")
+        } catch (exception: Exception) {
+            Log.w(TAG, "Failed to unregister Wi-Fi network callback.", exception)
+        }
     }
 
     private fun sendDiscoveryHeartbeats(socket: DatagramSocket) {
-        if (!isRunning.get()) return
+        if (!isRunning.get() || socket.isClosed) return
         val heartbeatBytes = UdpBridgeProtocol.buildHeartbeatPacket()
         val targetAddresses = LinkedHashSet<String>()
 
@@ -403,12 +541,13 @@ class UdpBridgeReceiver(
 
         val activeBridgeIp = _receiverState.value.bridgeIp
         if (activeBridgeIp != null) {
+            // In connected state, maintain pure unicast heartbeats to the verified bridge.
             targetAddresses.add(activeBridgeIp)
         } else {
-            // When disconnected or searching, probe the last-known bridge address if available.
+            // In searching/reconnecting state, probe the last-known bridge address and broadcast
+            // across local subnets to discover the bridge.
             lastKnownBridgeAddress?.hostAddress?.let { targetAddresses.add(it) }
 
-            // Also broadcast to all local subnets to re-establish contact with the bridge.
             val localEndpoints = getOrRefreshLocalIpv4Endpoints()
             for (endpoint in localEndpoints) {
                 endpoint.broadcastAddress?.let { targetAddresses.add(it) }
@@ -431,8 +570,16 @@ class UdpBridgeReceiver(
                 socket.send(packet)
                 sentAny = true
             } catch (exception: Exception) {
-                if (host == configuredIp) {
-                    recordSocketError("send($host)", exception)
+                Log.w(TAG, "Failed to send heartbeat to $host: ${exception.message}")
+                recordSocketError("send($host)", exception)
+                // If unicast transmission to the active bridge fails, fall back to discovery
+                // immediately so reconnecting does not stall until inactivity timeout.
+                if (host == activeBridgeIp) {
+                    Log.i(TAG, "Active unicast heartbeat failed to $host. Falling back to discovery.")
+                    latestBridgeInetAddress = null
+                    _receiverState.update { currentState ->
+                        currentState.copy(bridgeIp = null, lastSocketError = lastErrorText)
+                    }
                 }
             }
         }
@@ -442,6 +589,7 @@ class UdpBridgeReceiver(
     }
 
     private fun sendUnicastHeartbeatTo(socket: DatagramSocket, destination: InetAddress) {
+        if (!isRunning.get() || socket.isClosed) return
         try {
             val heartbeatBytes = UdpBridgeProtocol.buildHeartbeatPacket()
             val packet = DatagramPacket(
@@ -453,6 +601,7 @@ class UdpBridgeReceiver(
             socket.send(packet)
             heartbeatsSentCounter.incrementAndGet()
         } catch (exception: Exception) {
+            Log.w(TAG, "Failed to send unicast heartbeat to ${destination.hostAddress}: ${exception.message}")
             recordSocketError("send(${destination.hostAddress})", exception)
         }
     }
@@ -467,7 +616,9 @@ class UdpBridgeReceiver(
         val datagramPacket = DatagramPacket(receiveBuffer, receiveBuffer.size)
         var lastSequenceNumber: Long? = null
 
-        while (isRunning.get() && !Thread.currentThread().isInterrupted) {
+        // Exit once this socket is closed so a loop for a replaced socket does not keep running
+        // alongside the loop for its replacement.
+        while (isRunning.get() && !socket.isClosed && !Thread.currentThread().isInterrupted) {
             try {
                 // Always reset the DatagramPacket buffer length before receive() because Java's
                 // DatagramSocket.receive() shrinks datagramPacket.length to the last packet's size.
@@ -485,6 +636,9 @@ class UdpBridgeReceiver(
                         lastPacketReceivedTimestampMillis.set(SystemClock.elapsedRealtime())
                         latestBridgeInetAddress = senderAddress
                         lastKnownBridgeAddress = senderAddress
+                        if (_receiverState.value.bridgeIp != senderHost) {
+                            Log.i(TAG, "Bridge announced at $senderHost.")
+                        }
                         _receiverState.update { currentState ->
                             currentState.copy(
                                 bridgeIp = senderHost,
@@ -502,7 +656,8 @@ class UdpBridgeReceiver(
                     latestBridgeInetAddress = senderAddress
                     lastKnownBridgeAddress = senderAddress
                 }
-                if (senderHost != null && _receiverState.value.bridgeIp == null) {
+                if (senderHost != null && !isLocalIpv4Address(senderHost) && _receiverState.value.bridgeIp != senderHost) {
+                    Log.i(TAG, "Active bridge IP confirmed from incoming data packet: $senderHost.")
                     _receiverState.update { currentState ->
                         currentState.copy(
                             bridgeIp = senderHost,
@@ -549,10 +704,11 @@ class UdpBridgeReceiver(
                     }
                 }
             } catch (_: SocketTimeoutException) {
-                checkConnectionTimeout()
+                // The heartbeat scheduler runs checkConnectionTimeout() once per second, which
+                // keeps the disconnected-cycle count aligned with elapsed seconds.
                 refreshLocalInterfaces()
             } catch (exception: Exception) {
-                if (!isRunning.get()) break
+                if (!isRunning.get() || socket.isClosed) break
                 recordSocketError("receive", exception)
                 refreshLocalInterfaces()
             }
@@ -717,6 +873,11 @@ class UdpBridgeReceiver(
         ) {
             val wasConnected = _receiverState.value.bridgeIp != null
             if (wasConnected) {
+                Log.w(
+                    TAG,
+                    "Connection timed out after ${now - lastReceivedTimestampMillis} ms of inactivity. " +
+                        "Switching to discovery mode.",
+                )
                 latestBridgeInetAddress = null
                 videoDecoder.resetStream()
                 _receiverState.update { currentState ->
@@ -729,13 +890,18 @@ class UdpBridgeReceiver(
             // Clear the timestamp so that stale values do not immediately re-trigger a timeout
             // when a bridge IP is discovered/reconnected.
             lastPacketReceivedTimestampMillis.set(0L)
+        }
 
+        if (lastPacketReceivedTimestampMillis.get() == 0L) {
+            // Count every check while disconnected (not only the check that detected the timeout)
+            // so mDNS discovery is periodically restarted for as long as the bridge stays silent.
             val cycles = disconnectedCyclesCounter.incrementAndGet()
             // Periodically restart mDNS discovery every 10 seconds while disconnected to refresh service resolutions.
             if (cycles % 10L == 0L) {
+                Log.i(TAG, "Still disconnected after $cycles seconds. Restarting mDNS discovery.")
                 nsdClient?.restartDiscovery()
             }
-        } else if (lastReceivedTimestampMillis > 0L) {
+        } else {
             disconnectedCyclesCounter.set(0L)
             // Periodically refresh transport and decoder metrics when active if telemetry has paused.
             _receiverState.update { currentState ->

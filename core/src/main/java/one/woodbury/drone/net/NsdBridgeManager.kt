@@ -112,7 +112,9 @@ class NsdBridgeClient(
      */
     @Synchronized
     fun startDiscovery() {
-        if (isDiscovering.get() || nsdManager == null) return
+        // Guard on the registered listener rather than `isDiscovering`, which is only set once
+        // `onDiscoveryStarted` fires, so a pending request is not registered twice.
+        if (discoveryListener != null || nsdManager == null) return
 
         val cleanServiceType = if (serviceType.endsWith(".")) serviceType else "$serviceType."
 
@@ -170,7 +172,10 @@ class NsdBridgeClient(
         resolveQueue.clear()
         val listener = discoveryListener
         discoveryListener = null
-        if (listener != null && nsdManager != null && isDiscovering.getAndSet(false)) {
+        isDiscovering.set(false)
+        // Stop any registered listener, even if `onDiscoveryStarted` has not fired yet, so a
+        // pending discovery request is not leaked when discovery is restarted.
+        if (listener != null && nsdManager != null) {
             try {
                 nsdManager.stopServiceDiscovery(listener)
             } catch (exception: Exception) {

@@ -80,7 +80,6 @@ class MirrorMainActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         bridgeReceiver = UdpBridgeReceiver(applicationContext)
-        bridgeReceiver.start()
 
         enableEdgeToEdge()
         setContent {
@@ -102,6 +101,16 @@ class MirrorMainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        bridgeReceiver.start()
+    }
+
+    override fun onStop() {
+        bridgeReceiver.stop()
+        super.onStop()
     }
 
     override fun onDestroy() {
