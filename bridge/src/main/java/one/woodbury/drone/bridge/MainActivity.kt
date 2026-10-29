@@ -845,7 +845,7 @@ private fun DisclaimerSection(
         )
         Text(
             text = body,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
