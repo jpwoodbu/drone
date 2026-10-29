@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -42,6 +43,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -64,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -126,6 +129,27 @@ private fun requestIgnoreBatteryOptimization(context: Context) {
     }
 }
 
+private const val PREFS_NAME = "drone_bridge_prefs"
+private const val PREF_KEY_DISCLAIMER_ACCEPTED = "disclaimer_accepted"
+
+/**
+ * Returns true if the user has accepted the safety and legal disclaimer.
+ */
+private fun isDisclaimerAccepted(context: Context): Boolean {
+    return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getBoolean(PREF_KEY_DISCLAIMER_ACCEPTED, false)
+}
+
+/**
+ * Persists whether the safety and legal disclaimer has been accepted.
+ */
+private fun setDisclaimerAccepted(context: Context, accepted: Boolean = true) {
+    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(PREF_KEY_DISCLAIMER_ACCEPTED, accepted)
+        .apply()
+}
+
 /**
  * Screen identifiers for navigation within `:bridge`.
  */
@@ -151,6 +175,30 @@ class MainActivity : ComponentActivity() {
         setContent {
             DroneTheme {
                 val context = LocalContext.current
+                var hasAcceptedDisclaimerState by remember {
+                    mutableStateOf(isDisclaimerAccepted(context))
+                }
+                var showDisclaimerDialogManually by rememberSaveable {
+                    mutableStateOf(false)
+                }
+
+                if (!hasAcceptedDisclaimerState) {
+                    DisclaimerDialog(
+                        isFirstLaunch = true,
+                        onAccept = {
+                            setDisclaimerAccepted(context, true)
+                            hasAcceptedDisclaimerState = true
+                        },
+                        onDismiss = {},
+                    )
+                } else if (showDisclaimerDialogManually) {
+                    DisclaimerDialog(
+                        isFirstLaunch = false,
+                        onAccept = {},
+                        onDismiss = { showDisclaimerDialogManually = false },
+                    )
+                }
+
                 var hasNotificationPermissionState by remember {
                     mutableStateOf(hasNotificationPermission(context))
                 }
@@ -231,6 +279,7 @@ class MainActivity : ComponentActivity() {
                                 onDisconnectSubscribersClicked = { connectionManager.disconnectAllSubscribers() },
                                 onResumeSubscribersClicked = { connectionManager.resumeSubscribers() },
                                 onOpenDebugClicked = { currentScreen = BridgeScreen.STREAM_DEBUG },
+                                onShowDisclaimer = { showDisclaimerDialogManually = true },
                                 modifier = Modifier.padding(innerPadding),
                             )
                         }
@@ -289,6 +338,7 @@ fun ControllerDiagnosticsScreen(
     onDisconnectSubscribersClicked: () -> Unit,
     onResumeSubscribersClicked: () -> Unit,
     onOpenDebugClicked: () -> Unit,
+    onShowDisclaimer: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -338,6 +388,17 @@ fun ControllerDiagnosticsScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(text = "View Stream Debugger")
+        }
+
+        TextButton(
+            onClick = onShowDisclaimer,
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+        ) {
+            Text(
+                text = stringResource(R.string.disclaimer_footer_link),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -689,6 +750,93 @@ private fun BatteryOptimizationCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun DisclaimerDialog(
+    isFirstLaunch: Boolean,
+    onAccept: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = {
+            if (!isFirstLaunch) {
+                onDismiss()
+            }
+        },
+        properties = DialogProperties(
+            dismissOnBackPress = !isFirstLaunch,
+            dismissOnClickOutside = !isFirstLaunch,
+        ),
+        title = {
+            Text(
+                text = stringResource(R.string.disclaimer_dialog_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        text = {
+            val scrollState = rememberScrollState()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                DisclaimerSection(
+                    title = stringResource(R.string.disclaimer_safety_title),
+                    body = stringResource(R.string.disclaimer_safety_body),
+                )
+                HorizontalDivider()
+                DisclaimerSection(
+                    title = stringResource(R.string.disclaimer_liability_title),
+                    body = stringResource(R.string.disclaimer_liability_body),
+                )
+                HorizontalDivider()
+                DisclaimerSection(
+                    title = stringResource(R.string.disclaimer_trademark_title),
+                    body = stringResource(R.string.disclaimer_trademark_body),
+                )
+            }
+        },
+        confirmButton = {
+            if (isFirstLaunch) {
+                Button(
+                    onClick = onAccept,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(text = stringResource(R.string.disclaimer_accept_button))
+                }
+            } else {
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(text = stringResource(R.string.disclaimer_close_button))
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun DisclaimerSection(
+    title: String,
+    body: String,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            text = body,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

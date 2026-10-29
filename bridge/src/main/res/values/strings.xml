@@ -14,4 +14,14 @@
     <string name="battery_optimization_description">To prevent the device from suspending USB and Wi-Fi streaming when the screen is locked in your pocket, allow Drone Bridge to run unrestricted in the background.</string>
     <string name="battery_optimization_button">Disable Optimization</string>
     <string name="battery_optimization_dismiss">Dismiss</string>
+    <string name="disclaimer_dialog_title">Safety &amp; Legal Notice</string>
+    <string name="disclaimer_safety_title">Aviation Safety &amp; Regulations</string>
+    <string name="disclaimer_safety_body">Operating unmanned aircraft involves inherent operational and safety risks. Pilots are solely responsible for ensuring safe operation of their aircraft in compliance with all applicable local laws, civil aviation authority regulations, airspace authorizations, and Visual Line of Sight (VLOS) requirements. Never operate aircraft in a manner that endangers people, property, or other airspace users.</string>
+    <string name="disclaimer_liability_title">Disclaimer of Liability</string>
+    <string name="disclaimer_liability_body">This software is provided \"AS IS\", without warranty of any kind, express or implied. In no event shall the authors or contributors be liable for any damages—including loss of aircraft, crashes, flyaways, hardware damage, personal injury, or property damage—arising out of the use of this software.</string>
+    <string name="disclaimer_trademark_title">Independent Project</string>
+    <string name="disclaimer_trademark_body">Drone Bridge is an independent open-source project and is neither affiliated with, authorized, sponsored, endorsed, nor supported by SZ DJI Technology Co., Ltd., Meta Platforms, Inc., or any of their affiliates.</string>
+    <string name="disclaimer_accept_button">I Understand &amp; Accept</string>
+    <string name="disclaimer_close_button">Close</string>
+    <string name="disclaimer_footer_link">Safety &amp; Legal Notices</string>
 </resources>
