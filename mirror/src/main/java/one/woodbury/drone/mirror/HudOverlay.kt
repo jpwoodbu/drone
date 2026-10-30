@@ -303,15 +303,6 @@ fun HudOverlay(
                 }
             }
 
-            // Top-Right: Gimbal pitch indicator.
-            HudDataRow(
-                label = "GIMBAL",
-                value = gimbalText,
-                hudColor = hudColor,
-                boxBackgroundColor = boxBackgroundColor,
-                modifier = Modifier.align(Alignment.TopEnd),
-            )
-
             // Center: Total velocity vector symbol (-O-).
             VelocityVectorSymbol(
                 hudColor = hudColor,
@@ -327,12 +318,18 @@ fun HudOverlay(
                 modifier = Modifier.align(Alignment.CenterStart),
             )
 
-            // Right-Center: Altitude readout box and vertical speed readout.
+            // Right-Center: Gimbal pitch, altitude readout box and vertical speed readout.
             Column(
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.align(Alignment.CenterEnd),
             ) {
+                HudDataRow(
+                    label = "GIMBAL",
+                    value = gimbalText,
+                    hudColor = hudColor,
+                    boxBackgroundColor = boxBackgroundColor,
+                )
                 val altitudeColor = if (isAltitudeWarning) {
                     BaseHudAlertRed.copy(alpha = opacity)
                 } else {
