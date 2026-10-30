@@ -786,16 +786,6 @@ private fun BottomStatusBar(
                         modifier = Modifier.size(20.dp),
                     )
                 }
-                IconButton(
-                    onClick = onOpenSettings,
-                    modifier = Modifier.size(28.dp),
-                ) {
-                    Text(
-                        text = "⚙",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color.White.copy(alpha = 0.85f),
-                    )
-                }
                 if (isRecording && recordingTimeText != null) {
                     Box(
                         modifier = Modifier
@@ -903,6 +893,25 @@ private fun BottomStatusBar(
                         color = Color(0xFF58A6FF),
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
+                }
+                ComposeSurface(
+                    color = Color(0xFF21262D),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable(onClick = onOpenSettings),
+                ) {
+                    Box(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_settings),
+                            contentDescription = "Mirror Settings",
+                            tint = Color(0xFF58A6FF),
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
                 }
             }
         }
