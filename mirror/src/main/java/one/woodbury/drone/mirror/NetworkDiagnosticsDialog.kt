@@ -2,7 +2,7 @@ package one.woodbury.drone.mirror
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -136,10 +136,12 @@ private fun NetworkRow(
     highlight: Boolean = false,
     valueColor: Color = Color.Unspecified,
 ) {
-    Row(
+    // Keeps the label and value on one line when they fit, and otherwise wraps the value onto its
+    // own line below the label rather than squeezing or clipping it.
+    FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+        itemVerticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = label,
