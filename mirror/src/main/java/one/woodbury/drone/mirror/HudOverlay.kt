@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -168,6 +167,22 @@ private val BaseHudAlertAmber = Color(0xFFD29922)
 private const val HUD_TAPE_INTERPOLATION_MILLIS = 100
 
 /**
+ * Default width-to-height aspect ratio of the HUD layout frame (square, like an aircraft HUD combiner).
+ */
+const val HUD_ASPECT_RATIO_DEFAULT = 1.0f
+
+/**
+ * Narrowest user-selectable HUD aspect ratio. Narrower frames cannot fit the fixed-width heading tape
+ * and cause the corner telemetry columns to collide.
+ */
+const val HUD_ASPECT_RATIO_MIN = 0.75f
+
+/**
+ * Widest user-selectable HUD aspect ratio.
+ */
+const val HUD_ASPECT_RATIO_MAX = 2.0f
+
+/**
  * Aircraft-style Heads-Up Display (HUD) overlaid on the video viewport.
  */
 @Composable
@@ -178,6 +193,7 @@ fun HudOverlay(
     modifier: Modifier = Modifier,
 ) {
     val opacity = state.hudOpacity.coerceIn(0.2f, 1.0f)
+    val aspectRatio = state.hudAspectRatio.coerceIn(HUD_ASPECT_RATIO_MIN, HUD_ASPECT_RATIO_MAX)
     val hudColor = BaseHudGreen.copy(alpha = opacity)
     val boxBackgroundColor = Color.Black.copy(alpha = 0.4f * opacity)
 
@@ -268,10 +284,11 @@ fun HudOverlay(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
+        // The HUD frame is the largest rectangle of the user-selected aspect ratio that fits
+        // within the video viewport, centered.
         Box(
             modifier = Modifier
-                .fillMaxHeight()
-                .aspectRatio(0.95f)
+                .aspectRatio(aspectRatio)
                 .padding(16.dp),
         ) {
             // Top-Center: Heading tape and active alert banner.
@@ -309,26 +326,38 @@ fun HudOverlay(
                 modifier = Modifier.align(Alignment.Center),
             )
 
-            // Left-Center: Ground speed readout box.
-            SpeedBox(
-                groundSpeedMetersPerSecond = groundSpeedMetersPerSecond,
-                unitSystem = state.unitSystem,
-                hudColor = hudColor,
-                onClick = onToggleUnitSystem,
-                modifier = Modifier.align(Alignment.CenterStart),
-            )
-
-            // Right-Center: Gimbal pitch, altitude readout box and vertical speed readout.
+            // Left-Center: Gimbal pitch above the ground speed readout box.
             Column(
-                horizontalAlignment = Alignment.End,
+                horizontalAlignment = Alignment.Start,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.align(Alignment.CenterEnd),
+                modifier = Modifier.align(Alignment.CenterStart),
             ) {
                 HudDataRow(
                     label = "GIMBAL",
                     value = gimbalText,
                     hudColor = hudColor,
                     boxBackgroundColor = boxBackgroundColor,
+                )
+                SpeedBox(
+                    groundSpeedMetersPerSecond = groundSpeedMetersPerSecond,
+                    unitSystem = state.unitSystem,
+                    hudColor = hudColor,
+                    onClick = onToggleUnitSystem,
+                )
+            }
+
+            // Right-Center: Vertical speed readout above the altitude readout box.
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.align(Alignment.CenterEnd),
+            ) {
+                HudDataRow(
+                    label = "V/S",
+                    value = verticalSpeedText,
+                    hudColor = hudColor,
+                    boxBackgroundColor = boxBackgroundColor,
+                    onClick = onToggleUnitSystem,
                 )
                 val altitudeColor = if (isAltitudeWarning) {
                     BaseHudAlertRed.copy(alpha = opacity)
@@ -340,13 +369,6 @@ fun HudOverlay(
                     unitSystem = state.unitSystem,
                     hudColor = hudColor,
                     readoutColor = altitudeColor,
-                    onClick = onToggleUnitSystem,
-                )
-                HudDataRow(
-                    label = "V/S",
-                    value = verticalSpeedText,
-                    hudColor = hudColor,
-                    boxBackgroundColor = boxBackgroundColor,
                     onClick = onToggleUnitSystem,
                 )
             }

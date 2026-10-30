@@ -63,6 +63,7 @@ data class MirrorReceiverState(
     val unitSystem: UnitSystem = UnitSystem.METRIC,
     val isHudEnabled: Boolean = false,
     val hudOpacity: Float = 0.85f,
+    val hudAspectRatio: Float = HUD_ASPECT_RATIO_DEFAULT,
     val isGridOverlayEnabled: Boolean = false,
     val videoDecoderMetrics: VideoDecoderMetrics = VideoDecoderMetrics(),
     val homeLatitudeDegrees: Double? = null,
@@ -132,6 +133,11 @@ class UdpBridgeReceiver(
         sharedPreferences.getFloat(_preferenceHudOpacity, 0.85f).coerceIn(0.2f, 1.0f)
 
     @Volatile
+    private var currentHudAspectRatio: Float =
+        sharedPreferences.getFloat(_preferenceHudAspectRatio, HUD_ASPECT_RATIO_DEFAULT)
+            .coerceIn(HUD_ASPECT_RATIO_MIN, HUD_ASPECT_RATIO_MAX)
+
+    @Volatile
     private var socketStatusText: String = "Not started"
 
     @Volatile
@@ -146,6 +152,7 @@ class UdpBridgeReceiver(
             unitSystem = currentUnitSystem,
             isHudEnabled = currentHudEnabled,
             hudOpacity = currentHudOpacity,
+            hudAspectRatio = currentHudAspectRatio,
         ),
     )
     val receiverState: StateFlow<MirrorReceiverState> = _receiverState.asStateFlow()
@@ -274,6 +281,20 @@ class UdpBridgeReceiver(
             .apply()
         _receiverState.update { currentState ->
             currentState.copy(hudOpacity = clamped)
+        }
+    }
+
+    /**
+     * Updates and persists the width-to-height aspect ratio of the aircraft HUD layout frame.
+     */
+    fun setHudAspectRatio(aspectRatio: Float) {
+        val clamped = aspectRatio.coerceIn(HUD_ASPECT_RATIO_MIN, HUD_ASPECT_RATIO_MAX)
+        currentHudAspectRatio = clamped
+        sharedPreferences.edit()
+            .putFloat(_preferenceHudAspectRatio, clamped)
+            .apply()
+        _receiverState.update { currentState ->
+            currentState.copy(hudAspectRatio = clamped)
         }
     }
 
@@ -926,5 +947,6 @@ class UdpBridgeReceiver(
         private const val _preferenceAltitudeUnit = "preference_altitude_unit"
         private const val _preferenceHudEnabled = "preference_hud_enabled"
         private const val _preferenceHudOpacity = "preference_hud_opacity"
+        private const val _preferenceHudAspectRatio = "preference_hud_aspect_ratio"
     }
 }

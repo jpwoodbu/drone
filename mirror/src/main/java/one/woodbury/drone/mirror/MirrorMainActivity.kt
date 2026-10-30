@@ -96,6 +96,7 @@ class MirrorMainActivity : ComponentActivity() {
                         onSetUnitSystem = { unitSystem -> bridgeReceiver.setUnitSystem(unitSystem) },
                         onSetHudEnabled = { enabled -> bridgeReceiver.setHudEnabled(enabled) },
                         onSetHudOpacity = { opacity -> bridgeReceiver.setHudOpacity(opacity) },
+                        onSetHudAspectRatio = { aspectRatio -> bridgeReceiver.setHudAspectRatio(aspectRatio) },
                         modifier = Modifier.padding(innerPadding),
                     )
                 }
@@ -127,6 +128,7 @@ fun MirrorCockpitScreen(
     onSetUnitSystem: (UnitSystem) -> Unit,
     onSetHudEnabled: (Boolean) -> Unit,
     onSetHudOpacity: (Float) -> Unit,
+    onSetHudAspectRatio: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -150,6 +152,7 @@ fun MirrorCockpitScreen(
             unitSystem = state.unitSystem,
             isHudEnabled = state.isHudEnabled,
             hudOpacity = state.hudOpacity,
+            hudAspectRatio = state.hudAspectRatio,
             onApplyBridgeIp = { ipAddress ->
                 onSetBridgeIp(ipAddress)
                 showSettingsDialog = false
@@ -159,6 +162,7 @@ fun MirrorCockpitScreen(
             },
             onSetHudEnabled = onSetHudEnabled,
             onSetHudOpacity = onSetHudOpacity,
+            onSetHudAspectRatio = onSetHudAspectRatio,
             onDismiss = { showSettingsDialog = false },
         )
     }
@@ -360,10 +364,12 @@ private fun MirrorSettingsDialog(
     unitSystem: UnitSystem,
     isHudEnabled: Boolean,
     hudOpacity: Float,
+    hudAspectRatio: Float,
     onApplyBridgeIp: (String) -> Unit,
     onSelectUnitSystem: (UnitSystem) -> Unit,
     onSetHudEnabled: (Boolean) -> Unit,
     onSetHudOpacity: (Float) -> Unit,
+    onSetHudAspectRatio: (Float) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var textValue by remember(configuredIp) { mutableStateOf(configuredIp) }
@@ -425,6 +431,33 @@ private fun MirrorSettingsDialog(
                         value = hudOpacity,
                         onValueChange = onSetHudOpacity,
                         valueRange = 0.2f..1.0f,
+                        enabled = isHudEnabled,
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "HUD Aspect Ratio",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = "%.2f : 1".format(hudAspectRatio),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Slider(
+                        value = hudAspectRatio,
+                        onValueChange = onSetHudAspectRatio,
+                        valueRange = HUD_ASPECT_RATIO_MIN..HUD_ASPECT_RATIO_MAX,
+                        // Snaps to 0.05 increments so the default (1.00) is reachable exactly.
+                        steps = ((HUD_ASPECT_RATIO_MAX - HUD_ASPECT_RATIO_MIN) / 0.05f).roundToInt() - 1,
                         enabled = isHudEnabled,
                     )
                 }
