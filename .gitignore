@@ -18,3 +18,6 @@ local.properties
 key.properties
 *.keystore
 *.jks
+
+# Temporary vim files
+*.swp
