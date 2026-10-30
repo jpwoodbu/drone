@@ -10,12 +10,12 @@
 
 The DJI Mavic Air remote controller communicates over USB using the Android Open Accessory (AOA) protocol. Because Android-based VR headsets—such as Meta Quest—do not support AOA mode, they cannot connect directly to the controller. The companion <b>Drone Bridge</b> app solves this by running on an Android device plugged into the remote controller via USB, relaying the live video and telemetry stream over Wi-Fi to <b>Drone Mirror</b>.
 
-Designed as a standard 2D flat Android application and available on both Google Play and the Meta Horizon Store, <b>Drone Mirror</b> is ideal for use with a VR headset in passthrough mode, floating like a display in front of you. By receiving video and telemetry wirelessly, it allows you to view your flight feed without tethering your display device directly to the physical remote controller.
+Designed as a standard 2D flat Android application and available on both Google Play and the Meta Horizon Store, <b>Drone Mirror</b> is ideal for use with a VR headset in pass-through mode, floating like a display in front of you. By receiving video and telemetry wirelessly, it allows you to view your flight feed without tethering your display device directly to the physical remote controller.
 
 <b>KEY MIRROR FEATURES</b>
 
-* Low-Latency Video: Decodes incoming video streams directly using hardware acceleration for smooth, responsive flight viewing.
-* Real-Time Telemetry HUD: Features an optional Heads-Up Display (HUD) overlay and a dedicated top status bar displaying altitude, speed, distance from home, battery percentage, GPS satellite lock, pitch/roll attitude, compass heading, and gimbal pitch.
+* Low-Latency Video: Unprocessed video stream is passed through via <b>Drone Bridge</b> and decoded in hardware for lowest possible latency.
+* Real-Time Telemetry HUD: Features an optional Heads-Up Display (HUD) overlay and a top status bar displaying altitude, speed, distance from home, battery percentage, GPS satellite lock, pitch/roll attitude, compass heading, and gimbal pitch.
 * Diagnostics & Stream Health: The bottom status bar provides live stream metrics including video resolution, bitrate, framerate, recording duration, and network packet drop statistics.
 * Detailed Diagnostic Dialogs: Tap metrics to inspect detailed readouts, including individual battery cell voltages, flight mode descriptions, camera settings, and real-time network connection health.
 * Composition Grid Overlay: Quickly toggle a rule-of-thirds composition framing grid directly from the remote controller's C button.
