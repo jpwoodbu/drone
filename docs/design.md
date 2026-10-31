@@ -88,3 +88,79 @@ the other telemetry is already being displayed or is otherwise easily available,
 and since turning off the front LEDs doesn't seem to provide much utility, the
 c-button is currently set up to always toggle a "rule of thirds" photography
 grid.
+
+## Android Permissions
+
+### Drone Mirror Permissions
+
+The `:mirror` application operates strictly as a consumer and renderer of UDP
+data from the `:bridge` application. It requires only standard network
+permissions:
+
+- `android.permission.INTERNET`: Required to create and bind the UDP
+  `DatagramSocket` (port `5600`). In Android, socket operations require this
+  permission even when communicating strictly on a LAN.
+- `android.permission.ACCESS_NETWORK_STATE`: Required to register a
+  `ConnectivityManager.NetworkCallback` and query active interface capabilities.
+  This enables `:mirror` to detect when the device joins or leaves a Wi-Fi
+  network and dynamically bind its UDP socket to the active Wi-Fi network
+  interface (`wlan0`).
+- `android.permission.ACCESS_WIFI_STATE`: Required to interact with the system
+  `WifiManager` to inspect Wi-Fi connection parameters and allocate a multicast
+  lock.
+- `android.permission.CHANGE_WIFI_MULTICAST_STATE`: Required to acquire a
+  `WifiManager.MulticastLock`. By default, Android Wi-Fi drivers and hardware
+  filter out broadcast and multicast packets to preserve battery. Holding this
+  lock allows `:mirror` to broadcast discovery packets across the local subnet
+  so `:bridge` can automatically discover and stream to the device.
+
+All permissions declared by `:mirror` are standard (`ProtectionLevel.NORMAL`)
+permissions granted automatically at install time. Screen wakefulness while
+viewing video is maintained via the `FLAG_KEEP_SCREEN_ON` window attribute,
+eliminating the need for `android.permission.WAKE_LOCK`.
+
+### Drone Bridge Permissions
+
+The `:bridge` application acts as a long-running background relay between the
+physical DJI remote controller (connected via USB) and downstream network
+subscribers. It requires permissions for USB accessory communication, background
+execution, and network broadcasting:
+
+- `android.permission.INTERNET`: Required to bind UDP sockets.
+- `android.permission.ACCESS_NETWORK_STATE`: Required to monitor Wi-Fi
+  connectivity and network route changes via `ConnectivityManager`, ensuring the
+  UDP bridge cleanly adapts to Wi-Fi connection and disconnection events.
+- `android.permission.ACCESS_WIFI_STATE` &
+  `android.permission.CHANGE_WIFI_MULTICAST_STATE`: Required to acquire a
+  `WifiManager.MulticastLock`. By default, Android Wi-Fi chipsets filter out all
+  inbound multicast and broadcast traffic at the hardware level to conserve
+  battery. Just as any local network service utilizing mDNS, SSDP, or
+  zero-configuration discovery requires a multicast lock to receive incoming
+  announcements on Android, `:bridge` requires this lock so the Wi-Fi hardware
+  does not discard inbound discovery packets sent by `:mirror`.
+- `android.permission.FOREGROUND_SERVICE` &
+  `android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE`: Required to run
+  `BridgeForegroundService`. Android 9 (API 28) introduced the baseline
+  `FOREGROUND_SERVICE` permission, and Android 14 (API 34) made specific typed
+  permissions mandatory. Because `:bridge` manages real-time USB communication
+  with the physical remote controller and streams low-latency flight video, it
+  must not be throttled or killed by the Android OS when the screen is locked,
+  minimized, or placed in a pocket. The `connectedDevice` service type
+  specifically justifies continuous communication with an external USB
+  accessory.
+- `android.permission.POST_NOTIFICATIONS`: Required on Android 13+ (API 33+) to
+  display the ongoing foreground service notification while
+  `BridgeForegroundService` is actively running, as mandated by the Android
+  platform for all foreground services.
+- `android.permission.WAKE_LOCK`: Required to acquire a partial CPU wake lock
+  within `BridgeForegroundService`, ensuring the CPU remains active to service
+  high-frequency USB bulk transfers (such as 30–60 fps H.264 video chunks) even
+  when the device display turns off during flight.
+- `android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`: Prompts the pilot
+  to exempt `:bridge` from aggressive vendor-specific battery-saving routines
+  (Doze mode) that could pause the USB accessory read loop or sever the
+  real-time telemetry link while an aircraft is airborne.
+- Feature `android.hardware.usb.accessory` (`required="true"`): Enforces
+  device-level support for the Android Open Accessory (AOA 2.0) protocol,
+  ensuring the application is only installed on devices with compatible USB
+  host/accessory hardware.
