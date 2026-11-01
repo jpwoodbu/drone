@@ -1,32 +1,48 @@
 #!/usr/bin/env bash
 
-# Map module names ("bridge" and "mirror") to `adb` serial identifiers
-# in a `devices.conf` file in this directory.
-# Run `adb devices -l` to find device identifiers in the first column.
+# Map target names ("bridge", "mirror-google", and "mirror-meta") to `adb`
+# serial identifiers in a `devices.conf` file in this directory.  Run `adb
+# devices -l` to find device identifiers in the first column.
 #
 # The `devices.conf` format uses key=value pairs, for example:
 #   bridge=adb-redacted._adb-tls-connect._tcp
-#   mirror=adb-redacted-but-different._adb-tls-connect._tcp
+#   mirror-meta=192.168.86.208:5555
+#   mirror-google=adb-redacted-phone._adb-tls-connect._tcp
+#
+# Mirror targets fall back to a generic `mirror` entry if not defined
+# individually.
 
 usage() {
-    printf 'Usage: %s <bridge|mirror> [-r]\n' "${0##*/}" >&2
+    printf 'Usage: %s <bridge|mirror-google|mirror-meta> [-r]\n' "${0##*/}" >&2
     printf 'Run `adb devices -l` to inspect connected devices.\n' >&2
 }
 
-# Require a module and allow only an optional `-r` flag.
-if (( $# < 1 || $# > 2 )) || [[ ${1:-} != bridge && ${1:-} != mirror ]] || [[ -n ${2:-} && ${2:-} != -r ]]; then
+# Require a valid target and allow only an optional `-r` flag.
+if (( $# < 1 || $# > 2 )) || [[ ${1:-} != bridge && ${1:-} != mirror-google && ${1:-} != mirror-meta ]] || [[ -n ${2:-} && ${2:-} != -r ]]; then
     usage
     exit 2
 fi
 
-module=$1
+target=$1
 release=${2:-}
 
 if [[ "$release" == "-r" ]]; then
-    apk_path="$module/build/outputs/apk/release/$module-release.apk"
+    build_type="release"
 else
-    apk_path="$module/build/outputs/apk/debug/$module-debug.apk"
+    build_type="debug"
 fi
+
+case "$target" in
+    bridge)
+        apk_path="bridge/build/outputs/apk/$build_type/bridge-$build_type.apk"
+        ;;
+    mirror-google)
+        apk_path="mirror/build/outputs/apk/play/$build_type/mirror-play-$build_type.apk"
+        ;;
+    mirror-meta)
+        apk_path="mirror/build/outputs/apk/horizon/$build_type/mirror-horizon-$build_type.apk"
+        ;;
+esac
 
 if [[ ! -f "$apk_path" ]]; then
     printf 'APK not found: %s\n' "$apk_path" >&2
@@ -41,16 +57,26 @@ if [[ ! -f "$config_file" ]]; then
     exit 1
 fi
 
-# Look for `<module>=<serial>`, ignoring leading whitespace.
-serial=$(grep -E "^[[:space:]]*${module}[[:space:]]*=" "$config_file" | head -n 1 | cut -d= -f2-)
-# Strip inline comments if present.
-serial="${serial%%#*}"
-# Strip surrounding whitespace.
-serial="${serial#"${serial%%[![:space:]]*}"}"
-serial="${serial%"${serial##*[![:space:]]}"}"
+get_serial() {
+    local key=$1
+    local val
+    val=$(grep -E "^[[:space:]]*${key}[[:space:]]*=" "$config_file" | head -n 1 | cut -d= -f2-)
+    # Strip inline comments if present.
+    val="${val%%#*}"
+    # Strip surrounding whitespace.
+    val="${val#"${val%%[![:space:]]*}"}"
+    val="${val%"${val##*[![:space:]]}"}"
+    printf '%s' "$val"
+}
+
+# Look for `<target>=<serial>`, falling back to `mirror=<serial>` for mirror targets.
+serial=$(get_serial "$target")
+if [[ -z "$serial" && "$target" == mirror-* ]]; then
+    serial=$(get_serial "mirror")
+fi
 
 if [[ -z "$serial" ]]; then
-    printf 'No serial configured for "%s" in %s\n' "$module" "$config_file" >&2
+    printf 'No serial configured for "%s" in %s\n' "$target" "$config_file" >&2
     exit 1
 fi
 
