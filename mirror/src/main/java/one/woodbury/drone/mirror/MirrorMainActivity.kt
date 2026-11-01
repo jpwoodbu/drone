@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -784,7 +785,7 @@ private fun BottomStatusBar(
             ) {
                 IconButton(
                     onClick = onOpenNetworkDiagnostics,
-                    modifier = Modifier.size(28.dp),
+                    modifier = Modifier.size(48.dp),
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_wifi),
@@ -870,53 +871,58 @@ private fun BottomStatusBar(
                 }
                 val isVideoMode = state.cameraTelemetry?.workMode == DumlProtocol.CAMERA_WORK_MODE_RECORD
                 ComposeSurface(
+                    onClick = onOpenCameraMode,
                     color = Color(0xFF21262D),
                     shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .clickable(onClick = onOpenCameraMode),
-                ) {
-                    Text(
-                        text = if (isVideoMode) "VIDEO" else "PHOTO",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF58A6FF),
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-                ComposeSurface(
-                    color = Color(0xFF21262D),
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .clickable(onClick = onOpenFlightModes),
-                ) {
-                    Text(
-                        text = "MODE: $flightMode",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF58A6FF),
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-                ComposeSurface(
-                    color = Color(0xFF21262D),
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .clickable(onClick = onOpenSettings),
+                    modifier = Modifier.defaultMinSize(minHeight = 40.dp),
                 ) {
                     Box(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    ) {
+                        Text(
+                            text = if (isVideoMode) "VIDEO" else "PHOTO",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF58A6FF),
+                        )
+                    }
+                }
+                ComposeSurface(
+                    onClick = onOpenFlightModes,
+                    color = Color(0xFF21262D),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.defaultMinSize(minHeight = 40.dp),
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    ) {
+                        Text(
+                            text = "MODE: $flightMode",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF58A6FF),
+                        )
+                    }
+                }
+                ComposeSurface(
+                    onClick = onOpenSettings,
+                    color = Color(0xFF21262D),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.defaultMinSize(minWidth = 40.dp, minHeight = 40.dp),
+                ) {
+                    Box(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.ic_settings),
                             contentDescription = "Mirror Settings",
                             tint = Color(0xFF58A6FF),
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(18.dp),
                         )
                     }
                 }
@@ -933,16 +939,21 @@ private fun HudMetricItem(
     valueColor: Color? = null,
     onClick: (() -> Unit)? = null,
 ) {
+    val itemModifier = if (onClick != null) {
+        Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
+            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+    } else {
+        Modifier
+            .defaultMinSize(minHeight = 48.dp)
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+    }
     Column(
         horizontalAlignment = Alignment.Start,
-        modifier = if (onClick != null) {
-            Modifier
-                .clip(RoundedCornerShape(4.dp))
-                .clickable(onClick = onClick)
-                .padding(horizontal = 4.dp, vertical = 2.dp)
-        } else {
-            Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-        },
+        verticalArrangement = Arrangement.Center,
+        modifier = itemModifier,
     ) {
         Text(
             text = label,

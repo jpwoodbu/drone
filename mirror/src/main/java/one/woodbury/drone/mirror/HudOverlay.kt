@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -633,30 +634,37 @@ private fun SpeedBox(
 
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(2.dp))
-            .background(Color.Black.copy(alpha = 0.85f))
-            .border(1.5.dp, hudColor, RoundedCornerShape(2.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(2.dp))
+                .background(Color.Black.copy(alpha = 0.85f))
+                .border(1.5.dp, hudColor, RoundedCornerShape(2.dp))
+                .padding(horizontal = 6.dp, vertical = 2.dp),
         ) {
-            Text(
-                text = readoutText,
-                fontSize = 13.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = hudColor,
-            )
-            Text(
-                text = unitText,
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = hudColor,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = readoutText,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = hudColor,
+                )
+                Text(
+                    text = unitText,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = hudColor,
+                )
+            }
         }
     }
 }
@@ -682,30 +690,37 @@ private fun AltitudeBox(
 
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(2.dp))
-            .background(Color.Black.copy(alpha = 0.85f))
-            .border(1.5.dp, readoutColor, RoundedCornerShape(2.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(2.dp))
+                .background(Color.Black.copy(alpha = 0.85f))
+                .border(1.5.dp, readoutColor, RoundedCornerShape(2.dp))
+                .padding(horizontal = 6.dp, vertical = 2.dp),
         ) {
-            Text(
-                text = readoutText,
-                fontSize = 13.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = readoutColor,
-            )
-            Text(
-                text = unitText,
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = readoutColor,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = readoutText,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = readoutColor,
+                )
+                Text(
+                    text = unitText,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = readoutColor,
+                )
+            }
         }
     }
 }
@@ -722,36 +737,59 @@ private fun HudDataRow(
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val rowModifier = if (onClick != null) {
-        modifier
-            .clip(RoundedCornerShape(2.dp))
-            .background(boxBackgroundColor)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 2.dp)
+    if (onClick != null) {
+        Box(
+            modifier = modifier
+                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(boxBackgroundColor)
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    text = label,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = hudColor.copy(alpha = hudColor.alpha * 0.75f),
+                )
+                Text(
+                    text = value,
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = hudColor,
+                )
+            }
+        }
     } else {
-        modifier
-            .clip(RoundedCornerShape(2.dp))
-            .background(boxBackgroundColor)
-            .padding(horizontal = 6.dp, vertical = 2.dp)
-    }
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = rowModifier,
-    ) {
-        Text(
-            text = label,
-            fontSize = 11.sp,
-            fontFamily = FontFamily.Monospace,
-            color = hudColor.copy(alpha = hudColor.alpha * 0.75f),
-        )
-        Text(
-            text = value,
-            fontSize = 12.sp,
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
-            color = hudColor,
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = modifier
+                .clip(RoundedCornerShape(2.dp))
+                .background(boxBackgroundColor)
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+        ) {
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                color = hudColor.copy(alpha = hudColor.alpha * 0.75f),
+            )
+            Text(
+                text = value,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                color = hudColor,
+            )
+        }
     }
 }
