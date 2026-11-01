@@ -1,32 +1,33 @@
 **IMPORTANT DISCLAIMER**
 
-**Drone Mirror** is an independent open-source project and is neither affiliated with, authorized, sponsored, endorsed, nor supported by SZ DJI Technology Co., Ltd. or Meta Platforms, Inc. or any of their affiliates. All trademarks are the property of their respective owners.
+**Drone Mirror** is an independent open-source project and is neither affiliated
+with, authorized, sponsored, endorsed, nor supported by SZ DJI Technology Co.,
+Ltd. or Meta Platforms, Inc. or any of their affiliates. All trademarks are the
+property of their respective owners.
 
-**Drone Mirror** is specifically developed for the DJI Mavic Air (WM230) aircraft and its standard remote controller (model S01A). It is not known to be compatible with other aircraft models or remote controllers.
+**Drone Mirror** is specifically developed for the DJI Mavic Air (WM230)
+aircraft and its standard remote controller (model S01A). It is not known to be
+compatible with other aircraft models or remote controllers.
 
 **OVERVIEW**
 
-**Drone Mirror** is a low-latency viewer application that displays live camera video and flight telemetry relayed over your local Wi-Fi or mobile hotspot from the companion **Drone Bridge** app (available on Google Play).
+**Drone Mirror** is a low-latency viewer displaying live video and telemetry
+relayed over Wi-Fi from the companion **Drone Bridge** app (available on Google
+Play). VR headsets do not support the DJI controller's USB AOA mode; **Drone
+Bridge** runs on an Android device plugged into the controller via USB and
+streams the feed wirelessly to **Drone Mirror**.
 
-The DJI Mavic Air remote controller communicates over USB using the Android Open Accessory (AOA) protocol. Because Android-based VR headsets—such as Meta Quest—do not support AOA mode, they cannot connect directly to the controller. The companion **Drone Bridge** app solves this by running on an Android device plugged into the remote controller via USB, relaying the live video and telemetry stream over Wi-Fi to **Drone Mirror**.
+**KEY FEATURES**
 
-Designed as a standard 2D flat Android application and available on both Google Play and the Meta Horizon Store, **Drone Mirror** is ideal for use with a VR headset in pass-through mode, floating like a display in front of you. By receiving video and telemetry wirelessly, it allows you to view your flight feed without tethering your display device directly to the physical remote controller.
-
-**KEY MIRROR FEATURES**
-
-- Low-Latency Video: Unprocessed video stream is passed through via **Drone Bridge** and decoded in hardware for lowest possible latency.
-- Real-Time Telemetry HUD: Features an optional Heads-Up Display (HUD) overlay and a top status bar displaying altitude, speed, distance from home, battery percentage, GPS satellite lock, pitch/roll attitude, compass heading, and gimbal pitch.
-- Diagnostics & Stream Health: The bottom status bar provides live stream metrics including video resolution, bitrate, framerate, recording duration, and network packet drop statistics.
-- Detailed Diagnostic Dialogs: Tap metrics to inspect detailed readouts, including individual battery cell voltages, flight mode descriptions, camera settings, and real-time network connection health.
-- Composition Grid Overlay: Quickly toggle a rule-of-thirds composition framing grid directly from the remote controller's C button.
-- Automatic Discovery: Automatically locates the bridge device across your local Wi-Fi or mobile hotspot, with manual IP address configuration available as a fallback.
-- Metric & Imperial Support: Seamlessly switch between metric and imperial flight measurement units with a single tap.
-- No Virtual Controls: Flight control remains completely managed by the physical DJI remote controller. Neither **Drone Mirror** nor **Drone Bridge** provides virtual flight sticks on screen.
-- Zero Data Collection: Drone Mirror does not collect, track, or transmit any telemetry, video, or personal data to the internet or third-party servers. All data remains strictly on your local network.
+- Low-Latency Video: Hardware-decoded stream relayed from **Drone Bridge**.
+- Telemetry HUD: Real-time altitude, speed, distance, battery, GPS, and
+  attitude.
+- Stream Diagnostics: Live bitrate, resolution, framerate, and network stats.
+- Physical Control: No on-screen sticks; control stays on the physical remote.
+- Zero Data Collection: All data remains strictly on your local network.
 
 **REQUIREMENTS**
 
-- Aircraft: DJI Mavic Air (WM230)
-- Remote Controller: DJI S01A Remote Controller
-- Companion App: **Drone Bridge** (available on Google Play) running on the Android device connected via USB to the remote controller
-- Network: Both devices connected to the same Wi-Fi network or mobile hotspot
+- DJI Mavic Air (WM230) & S01A controller
+- Companion **Drone Bridge** app (Google Play) on Android connected via USB
+- Shared Wi-Fi or mobile hotspot
