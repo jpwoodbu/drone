@@ -309,7 +309,7 @@ class UdpBridgeReceiver(
 
     /**
      * Opens UDP port `5600`, acquires a Wi-Fi `MulticastLock`, starts the periodic `"DBHB"`
-     * discovery broadcaster, and starts the `"DBDA"` stream receiver thread.
+     * heartbeat scheduler, and starts the `"DBDA"` stream receiver thread.
      *
      * Also registers a Wi-Fi [ConnectivityManager.NetworkCallback] so the UDP socket is rebound
      * whenever the Wi-Fi [Network] changes (for example, after the device wakes from sleep).
@@ -405,7 +405,6 @@ class UdpBridgeReceiver(
         try {
             val socket = DatagramSocket(null).apply {
                 reuseAddress = true
-                broadcast = true
                 receiveBufferSize = 2 * 1024 * 1024
                 soTimeout = 1_000
                 bind(InetSocketAddress("0.0.0.0", UdpBridgeProtocol.UDP_BRIDGE_PORT))
@@ -565,15 +564,8 @@ class UdpBridgeReceiver(
             // In connected state, maintain pure unicast heartbeats to the verified bridge.
             targetAddresses.add(activeBridgeIp)
         } else {
-            // In searching/reconnecting state, probe the last-known bridge address and broadcast
-            // across local subnets to discover the bridge.
+            // In searching/reconnecting state, probe the last-known bridge address if available.
             lastKnownBridgeAddress?.hostAddress?.let { targetAddresses.add(it) }
-
-            val localEndpoints = getOrRefreshLocalIpv4Endpoints()
-            for (endpoint in localEndpoints) {
-                endpoint.broadcastAddress?.let { targetAddresses.add(it) }
-                endpoint.gatewayAddress?.let { targetAddresses.add(it) }
-            }
         }
 
         if (targetAddresses.isEmpty()) return
