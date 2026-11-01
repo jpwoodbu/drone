@@ -253,11 +253,11 @@ fun MirrorCockpitScreen(
                         Text(
                             text = when {
                                 state.bridgeIp != null ->
-                                    "Connected to Bridge (${state.bridgeIp}) — awaiting H.264 keyframe…"
+                                    "Connected to Bridge — waiting for video stream…"
                                 state.configuredBridgeIp.isNotEmpty() ->
                                     "Sending unicast heartbeat to ${state.configuredBridgeIp}:5600…"
                                 else ->
-                                    "Waiting for Bridge mDNS service (_drone-bridge._udp.)…"
+                                    "Searching for Drone Bridge service…"
                             },
                             style = MaterialTheme.typography.titleMedium,
                             fontFamily = FontFamily.Monospace,

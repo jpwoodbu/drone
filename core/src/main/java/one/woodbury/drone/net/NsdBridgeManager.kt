@@ -122,7 +122,7 @@ class NsdBridgeClient(
             override fun onDiscoveryStarted(regType: String) {
                 isDiscovering.set(true)
                 Log.i(TAG, "NSD discovery started for $regType.")
-                onStatusChanged("Searching via mDNS ($regType)")
+                onStatusChanged("Searching ($regType)")
             }
 
             override fun onServiceFound(service: NsdServiceInfo) {
@@ -225,7 +225,7 @@ class NsdBridgeClient(
                         val port = resolvedService.port
                         Log.i(TAG, "NSD service resolved: $host:$port (${resolvedService.serviceName})")
                         if (!host.isNullOrBlank()) {
-                            onStatusChanged("Discovered $host via mDNS")
+                            onStatusChanged("Discovered $host")
                             onDeviceResolved(host, port)
                         }
                     } finally {

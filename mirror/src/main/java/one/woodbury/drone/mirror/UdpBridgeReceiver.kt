@@ -337,7 +337,7 @@ class UdpBridgeReceiver(
                     val inetAddress = InetAddress.getByName(hostAddress)
                     lastKnownBridgeAddress = inetAddress
                     _receiverState.update { currentState ->
-                        currentState.copy(nsdStatus = "Resolved $hostAddress via mDNS")
+                        currentState.copy(nsdStatus = "Resolved Bridge to: $hostAddress")
                     }
                     val activeSocket = udpSocket
                     if (activeSocket != null && _receiverState.value.bridgeIp == null) {
