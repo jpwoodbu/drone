@@ -21,7 +21,7 @@ android {
         applicationId = "one.woodbury.drone.mirror"
         minSdk = 29
         targetSdk = 36
-        versionCode = 2026103001
+        versionCode = 2026110101
         versionName = "0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -70,6 +70,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
