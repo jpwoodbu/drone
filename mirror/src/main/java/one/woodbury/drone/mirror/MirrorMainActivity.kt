@@ -139,15 +139,6 @@ fun MirrorCockpitScreen(
     var showFlightModesDialog by remember { mutableStateOf(false) }
     var showCameraModeDialog by remember { mutableStateOf(false) }
 
-    val toggleUnitSystem = {
-        val nextSystem = if (state.unitSystem == UnitSystem.METRIC) {
-            UnitSystem.IMPERIAL
-        } else {
-            UnitSystem.METRIC
-        }
-        onSetUnitSystem(nextSystem)
-    }
-
     if (showSettingsDialog) {
         MirrorSettingsDialog(
             configuredIp = state.configuredBridgeIp,
@@ -212,7 +203,6 @@ fun MirrorCockpitScreen(
             TopStatusBar(
                 state = state,
                 onOpenBatteryHealth = { showBatteryDialog = true },
-                onToggleUnitSystem = toggleUnitSystem,
             )
         }
 
@@ -344,7 +334,6 @@ fun MirrorCockpitScreen(
                     HudOverlay(
                         state = state,
                         onOpenBatteryHealth = { showBatteryDialog = true },
-                        onToggleUnitSystem = toggleUnitSystem,
                     )
                 }
             }
@@ -603,7 +592,6 @@ private fun MirrorSettingsDialog(
 private fun TopStatusBar(
     state: MirrorReceiverState,
     onOpenBatteryHealth: () -> Unit,
-    onToggleUnitSystem: () -> Unit,
 ) {
     val telemetry = state.flightControllerTelemetry
     val isImperial = state.unitSystem.isImperial
@@ -705,17 +693,14 @@ private fun TopStatusBar(
                 label = "ALTITUDE",
                 value = altitudeText,
                 valueColor = if (isAltitudeWarning) Color(0xFFF85149) else null,
-                onClick = onToggleUnitSystem,
             )
             HudMetricItem(
                 label = "SPEED (H/V)",
                 value = speedText,
-                onClick = onToggleUnitSystem,
             )
             HudMetricItem(
                 label = "DISTANCE",
                 value = distanceText,
-                onClick = onToggleUnitSystem,
             )
             HudMetricItem(
                 label = "GPS SATS",
@@ -956,12 +941,9 @@ private fun HudMetricItem(
         Modifier
             .clip(RoundedCornerShape(4.dp))
             .clickable(onClick = onClick)
-            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-            .padding(horizontal = 6.dp, vertical = 4.dp)
+            .padding(horizontal = 4.dp, vertical = 2.dp)
     } else {
-        Modifier
-            .defaultMinSize(minHeight = 48.dp)
-            .padding(horizontal = 6.dp, vertical = 4.dp)
+        Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
     }
     Column(
         horizontalAlignment = Alignment.Start,

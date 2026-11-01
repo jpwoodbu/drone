@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -190,7 +189,6 @@ const val HUD_ASPECT_RATIO_MAX = 2.0f
 fun HudOverlay(
     state: MirrorReceiverState,
     onOpenBatteryHealth: () -> Unit,
-    onToggleUnitSystem: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val opacity = state.hudOpacity.coerceIn(0.2f, 1.0f)
@@ -343,7 +341,6 @@ fun HudOverlay(
                     groundSpeedMetersPerSecond = groundSpeedMetersPerSecond,
                     unitSystem = state.unitSystem,
                     hudColor = hudColor,
-                    onClick = onToggleUnitSystem,
                 )
             }
 
@@ -358,7 +355,6 @@ fun HudOverlay(
                     value = verticalSpeedText,
                     hudColor = hudColor,
                     boxBackgroundColor = boxBackgroundColor,
-                    onClick = onToggleUnitSystem,
                 )
                 val altitudeColor = if (isAltitudeWarning) {
                     BaseHudAlertRed.copy(alpha = opacity)
@@ -370,7 +366,6 @@ fun HudOverlay(
                     unitSystem = state.unitSystem,
                     hudColor = hudColor,
                     readoutColor = altitudeColor,
-                    onClick = onToggleUnitSystem,
                 )
             }
 
@@ -412,7 +407,6 @@ fun HudOverlay(
                     value = distanceText,
                     hudColor = hudColor,
                     boxBackgroundColor = boxBackgroundColor,
-                    onClick = onToggleUnitSystem,
                 )
                 HudDataRow(
                     label = "PITCH",
@@ -622,7 +616,6 @@ private fun SpeedBox(
     groundSpeedMetersPerSecond: Float?,
     unitSystem: UnitSystem,
     hudColor: Color,
-    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val readoutText = if (groundSpeedMetersPerSecond != null) {
@@ -634,37 +627,29 @@ private fun SpeedBox(
 
     Box(
         modifier = modifier
-            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-            .clip(RoundedCornerShape(4.dp))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
+            .clip(RoundedCornerShape(2.dp))
+            .background(Color.Black.copy(alpha = 0.85f))
+            .border(1.5.dp, hudColor, RoundedCornerShape(2.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(2.dp))
-                .background(Color.Black.copy(alpha = 0.85f))
-                .border(1.5.dp, hudColor, RoundedCornerShape(2.dp))
-                .padding(horizontal = 6.dp, vertical = 2.dp),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    text = readoutText,
-                    fontSize = 13.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = hudColor,
-                )
-                Text(
-                    text = unitText,
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = hudColor,
-                )
-            }
+            Text(
+                text = readoutText,
+                fontSize = 13.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                color = hudColor,
+            )
+            Text(
+                text = unitText,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                color = hudColor,
+            )
         }
     }
 }
@@ -678,7 +663,6 @@ private fun AltitudeBox(
     unitSystem: UnitSystem,
     hudColor: Color,
     readoutColor: Color,
-    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val readoutText = if (altitudeMeters != null) {
@@ -690,37 +674,29 @@ private fun AltitudeBox(
 
     Box(
         modifier = modifier
-            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-            .clip(RoundedCornerShape(4.dp))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
+            .clip(RoundedCornerShape(2.dp))
+            .background(Color.Black.copy(alpha = 0.85f))
+            .border(1.5.dp, readoutColor, RoundedCornerShape(2.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(2.dp))
-                .background(Color.Black.copy(alpha = 0.85f))
-                .border(1.5.dp, readoutColor, RoundedCornerShape(2.dp))
-                .padding(horizontal = 6.dp, vertical = 2.dp),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    text = readoutText,
-                    fontSize = 13.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = readoutColor,
-                )
-                Text(
-                    text = unitText,
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = readoutColor,
-                )
-            }
+            Text(
+                text = readoutText,
+                fontSize = 13.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                color = readoutColor,
+            )
+            Text(
+                text = unitText,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                color = readoutColor,
+            )
         }
     }
 }
@@ -737,59 +713,36 @@ private fun HudDataRow(
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    if (onClick != null) {
-        Box(
-            modifier = modifier
-                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .clickable(onClick = onClick),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(boxBackgroundColor)
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-            ) {
-                Text(
-                    text = label,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = hudColor.copy(alpha = hudColor.alpha * 0.75f),
-                )
-                Text(
-                    text = value,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = hudColor,
-                )
-            }
-        }
+    val rowModifier = if (onClick != null) {
+        modifier
+            .clip(RoundedCornerShape(2.dp))
+            .background(boxBackgroundColor)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 2.dp)
     } else {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = modifier
-                .clip(RoundedCornerShape(2.dp))
-                .background(boxBackgroundColor)
-                .padding(horizontal = 6.dp, vertical = 2.dp),
-        ) {
-            Text(
-                text = label,
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                color = hudColor.copy(alpha = hudColor.alpha * 0.75f),
-            )
-            Text(
-                text = value,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = hudColor,
-            )
-        }
+        modifier
+            .clip(RoundedCornerShape(2.dp))
+            .background(boxBackgroundColor)
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = rowModifier,
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            color = hudColor.copy(alpha = hudColor.alpha * 0.75f),
+        )
+        Text(
+            text = value,
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            color = hudColor,
+        )
     }
 }
