@@ -844,45 +844,60 @@ private fun BottomStatusBar(
                     ComposeSurface(
                         color = Color(0xFFD29922).copy(alpha = 0.2f),
                         shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.defaultMinSize(minHeight = 40.dp),
                     ) {
-                        Text(
-                            text = "Fn",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFD29922),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        )
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                text = "Fn",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFD29922),
+                            )
+                        }
                     }
                 }
                 if (isCButtonPressed) {
                     ComposeSurface(
                         color = Color(0xFFD29922).copy(alpha = 0.2f),
                         shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.defaultMinSize(minHeight = 40.dp),
                     ) {
-                        Text(
-                            text = "C",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFD29922),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        )
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                text = "C",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFD29922),
+                            )
+                        }
                     }
                 }
                 if (isMotorsRunning) {
                     ComposeSurface(
                         color = Color(0xFF3FB950).copy(alpha = 0.2f),
                         shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.defaultMinSize(minHeight = 40.dp),
                     ) {
-                        Text(
-                            text = "MOTORS",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF3FB950),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        )
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                text = "MOTORS",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF3FB950),
+                            )
+                        }
                     }
                 }
                 val isVideoMode = state.cameraTelemetry?.workMode == DumlProtocol.CAMERA_WORK_MODE_RECORD
