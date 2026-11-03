@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -27,7 +26,7 @@ fun NetworkDiagnosticsDialog(
     onOpenSettings: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    MirrorDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(

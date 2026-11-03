@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,7 +29,7 @@ fun CameraModeDialog(
     val isVideoMode = cameraTelemetry?.workMode == DumlProtocol.CAMERA_WORK_MODE_RECORD
     val activeModeName = if (isVideoMode) "VIDEO" else "PHOTO"
 
-    AlertDialog(
+    MirrorDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
