@@ -156,6 +156,13 @@ fun MirrorCockpitScreen(
     var showNetworkDialog by remember { mutableStateOf(false) }
     var showFlightModesDialog by remember { mutableStateOf(false) }
     var showCameraModeDialog by remember { mutableStateOf(false) }
+    var showCompassErrorDialog by remember { mutableStateOf(false) }
+
+    if (showCompassErrorDialog) {
+        CompassErrorDialog(
+            onDismissRequest = { showCompassErrorDialog = false },
+        )
+    }
 
     if (showSettingsDialog) {
         MirrorSettingsDialog(
@@ -363,6 +370,7 @@ fun MirrorCockpitScreen(
             onOpenSettings = { showSettingsDialog = true },
             onOpenFlightModes = { showFlightModesDialog = true },
             onOpenCameraMode = { showCameraModeDialog = true },
+            onOpenCompassError = { showCompassErrorDialog = true },
         )
     }
 }
@@ -625,7 +633,6 @@ private fun TopStatusBar(
 
     val activeAlert = when {
         state.isReconnecting -> "LINK LOST" to Color(0xFFF85149)
-        telemetry?.isCompassError == true -> "COMPASS" to Color(0xFFF85149)
         telemetry?.isAutoLanding == true -> "LANDING" to Color(0xFFD29922)
         else -> null
     }
@@ -753,6 +760,7 @@ private fun BottomStatusBar(
     onOpenSettings: () -> Unit,
     onOpenFlightModes: () -> Unit,
     onOpenCameraMode: () -> Unit,
+    onOpenCompassError: () -> Unit,
 ) {
     val metrics = state.videoDecoderMetrics
     val fpsText = if (metrics.framesPerSecond > 0f) "%.1f fps".format(metrics.framesPerSecond) else "— fps"
@@ -896,6 +904,27 @@ private fun BottomStatusBar(
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF3FB950),
+                            )
+                        }
+                    }
+                }
+                if (telemetry?.isCompassError == true) {
+                    ComposeSurface(
+                        onClick = onOpenCompassError,
+                        color = Color(0xFFF85149).copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.defaultMinSize(minHeight = 40.dp),
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                text = "COMPASS",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFF85149),
                             )
                         }
                     }

@@ -38,12 +38,7 @@ class BridgeForegroundService : Service() {
         isServiceRunning = true
         lastState = NotificationState(isStreaming = false, isPaused = false)
         createNotificationChannel()
-        acquireLocks()
-    }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val notification = buildNotification(this, isStreaming = false, isPaused = false)
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
@@ -53,7 +48,10 @@ class BridgeForegroundService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        acquireLocks()
+    }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         return START_STICKY
     }
 

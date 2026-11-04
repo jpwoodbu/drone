@@ -29,7 +29,7 @@ critical navigation and automated flight commands.
 | `0x1A`–`0x1B` | 2 bytes | Int16 LE   | `roll`             | Aircraft roll angle in tenths of a degree (`0.1°`).                                                                                                                                                |
 | `0x1C`–`0x1D` | 2 bytes | Int16 LE   | `yaw`              | Aircraft true compass heading in tenths of a degree (`0.1°`). Range `-1800..1800`.                                                                                                                 |
 | `0x1E`        | 1 byte  | UInt8      | `flightMode`       | Flight mode integer code (see state table below).                                                                                                                                                  |
-| `0x20`–`0x23` | 4 bytes | UInt32 LE  | `statusFlags`      | Bitmask for aircraft operational state:<br>• **Bit `2` (`0x04`)**: Motors running (`motorsOn`)<br>• **Bit `3` (`0x08`)**: Aircraft airborne (`inAir`)<br>• **Bit `4` (`0x10`)**: Sport mode active |
+| `0x20`–`0x23` | 4 bytes | UInt32 LE  | `statusFlags`      | Bitmask for aircraft operational state:<br>• **Bit `2` (`0x04`)**: Motors running (`motorsOn`)<br>• **Bit `3` (`0x08`)**: Aircraft airborne (`inAir`)<br>• **Bit `4` (`0x10`)**: Sport mode active<br>• **Bit `16` (`0x10000`)**: Compass error / calibration required (`compassError`, byte 34 bit 0) |
 | `0x24`        | 1 byte  | UInt8      | `gpsSatellites`    | Number of locked GPS/GLONASS satellites.                                                                                                                                                           |
 | `0x26`–`0x27` | 2 bytes | Int16 LE   | `ultrasonicHeight` | Downward VPS (Visual Positioning System) height in decimeters (`0.1 m`).                                                                                                                           |
 | `0x28`        | 1 byte  | UInt8      | `batterySoc`       | Flight controller fallback battery percentage estimate (`0..100%`).                                                                                                                                |
@@ -92,6 +92,8 @@ executes primary autopilot maneuvers:
 |    `0x02`    | **Auto Landing**         | Initiates controlled vertical descent and disarms motors upon ground contact. |
 |    `0x03`    | **Return-to-Home**       | Climbs to configured RTH altitude and flies back to GPS Home Point.           |
 |    `0x04`    | **Cancel Landing / RTH** | Aborts active autonomous descent or RTH flight and resumes manual hover.      |
+|    `0x09`    | **Compass Calibration**  | Enters compass calibration routine (`COMPASS_CALI_STEP0`, solid yellow LED).  |
+|    `0x15`    | **Stop Calibration**     | Aborts active compass calibration routine.                                    |
 
 ---
 

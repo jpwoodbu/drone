@@ -141,6 +141,34 @@ class DumlProtocolTest {
     }
 
     @Test
+    fun decodeFlightControllerOsdTelemetry_extractsCompassError() {
+        val payload = ByteArray(50)
+        val buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+        // Bit 16 (0x10000 / Byte 34 bit 0) of controllerStateFlags represents compass error.
+        buffer.putInt(32, 0x10000)
+
+        val frame = DumlFrame(
+            sourceModuleId = DumlProtocol.MODULE_FLIGHT_CONTROLLER,
+            destinationModuleId = DumlProtocol.MODULE_MOBILE_APP,
+            sequenceNumber = 1,
+            commandType = 0x00,
+            commandSet = DumlProtocol.MODULE_FLIGHT_CONTROLLER,
+            commandId = 0x43,
+            payload = payload,
+        )
+
+        val decodedWithError = DumlProtocol.decodeFlightControllerOsdTelemetry(frame)
+        assertNotNull(decodedWithError)
+        assertTrue(decodedWithError!!.isCompassError)
+
+        // Clear bit 16
+        buffer.putInt(32, 0)
+        val decodedClean = DumlProtocol.decodeFlightControllerOsdTelemetry(frame)
+        assertNotNull(decodedClean)
+        assertFalse(decodedClean!!.isCompassError)
+    }
+
+    @Test
     fun decodeFlightControllerOsdTelemetry_mapsFlightModesCorrectly() {
         fun makeOsdFrame(modeByte: Int): DumlFrame {
             val payload = ByteArray(42)
@@ -735,6 +763,78 @@ class DumlProtocolTest {
         assertEquals(DumlProtocol.CMD_FLIGHT_CONTROLLER_FUNCTION_CONTROL, parsedFrames[0].commandId)
         assertArrayEquals(
             byteArrayOf(DumlProtocol.FLYC_FUNCTION_CONTROL_AUTO_LAND.toByte()),
+            parsedFrames[0].payload,
+        )
+    }
+
+    @Test
+    fun buildStartCompassCalibrationCommand_encodesExpectedFlightControllerFunctionControlFrame() {
+        val rawFrame = DumlProtocol.buildStartCompassCalibrationDumlFrame(sequenceNumber = 0x0607)
+        val outcome = DumlProtocol.tryParseDumlFrame(
+            buffer = rawFrame,
+            offset = 0,
+            availableLength = rawFrame.size,
+        )
+        assertTrue(outcome is DumlParseOutcome.Parsed)
+        val parsed = (outcome as DumlParseOutcome.Parsed).frame
+        assertEquals(DumlProtocol.MODULE_MOBILE_APP, parsed.sourceModuleId)
+        assertEquals(DumlProtocol.MODULE_FLIGHT_CONTROLLER, parsed.destinationModuleId)
+        assertEquals(0x0607, parsed.sequenceNumber)
+        assertEquals(DumlProtocol.COMMAND_TYPE_REQUEST_WITH_ACK, parsed.commandType)
+        assertEquals(DumlProtocol.MODULE_FLIGHT_CONTROLLER, parsed.commandSet)
+        assertEquals(DumlProtocol.CMD_FLIGHT_CONTROLLER_FUNCTION_CONTROL, parsed.commandId)
+        assertArrayEquals(
+            byteArrayOf(DumlProtocol.FLYC_FUNCTION_CONTROL_COMPASS_CALIBRATION.toByte()),
+            parsed.payload,
+        )
+
+        val aoaCommand = DumlProtocol.buildStartCompassCalibrationCommand(sequenceNumber = 0x0607)
+        val parsedFrames = mutableListOf<DumlFrame>()
+        val parser = AoaStreamParser(
+            onDumlFrame = { parsedFrames.add(it) },
+            onVideoChunk = {},
+        )
+        parser.feedBytes(aoaCommand, aoaCommand.size)
+        assertEquals(1, parsedFrames.size)
+        assertEquals(DumlProtocol.CMD_FLIGHT_CONTROLLER_FUNCTION_CONTROL, parsedFrames[0].commandId)
+        assertArrayEquals(
+            byteArrayOf(DumlProtocol.FLYC_FUNCTION_CONTROL_COMPASS_CALIBRATION.toByte()),
+            parsedFrames[0].payload,
+        )
+    }
+
+    @Test
+    fun buildStopCompassCalibrationCommand_encodesExpectedFlightControllerFunctionControlFrame() {
+        val rawFrame = DumlProtocol.buildStopCompassCalibrationDumlFrame(sequenceNumber = 0x0809)
+        val outcome = DumlProtocol.tryParseDumlFrame(
+            buffer = rawFrame,
+            offset = 0,
+            availableLength = rawFrame.size,
+        )
+        assertTrue(outcome is DumlParseOutcome.Parsed)
+        val parsed = (outcome as DumlParseOutcome.Parsed).frame
+        assertEquals(DumlProtocol.MODULE_MOBILE_APP, parsed.sourceModuleId)
+        assertEquals(DumlProtocol.MODULE_FLIGHT_CONTROLLER, parsed.destinationModuleId)
+        assertEquals(0x0809, parsed.sequenceNumber)
+        assertEquals(DumlProtocol.COMMAND_TYPE_REQUEST_WITH_ACK, parsed.commandType)
+        assertEquals(DumlProtocol.MODULE_FLIGHT_CONTROLLER, parsed.commandSet)
+        assertEquals(DumlProtocol.CMD_FLIGHT_CONTROLLER_FUNCTION_CONTROL, parsed.commandId)
+        assertArrayEquals(
+            byteArrayOf(DumlProtocol.FLYC_FUNCTION_CONTROL_STOP_COMPASS_CALIBRATION.toByte()),
+            parsed.payload,
+        )
+
+        val aoaCommand = DumlProtocol.buildStopCompassCalibrationCommand(sequenceNumber = 0x0809)
+        val parsedFrames = mutableListOf<DumlFrame>()
+        val parser = AoaStreamParser(
+            onDumlFrame = { parsedFrames.add(it) },
+            onVideoChunk = {},
+        )
+        parser.feedBytes(aoaCommand, aoaCommand.size)
+        assertEquals(1, parsedFrames.size)
+        assertEquals(DumlProtocol.CMD_FLIGHT_CONTROLLER_FUNCTION_CONTROL, parsedFrames[0].commandId)
+        assertArrayEquals(
+            byteArrayOf(DumlProtocol.FLYC_FUNCTION_CONTROL_STOP_COMPASS_CALIBRATION.toByte()),
             parsedFrames[0].payload,
         )
     }

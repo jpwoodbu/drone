@@ -87,6 +87,12 @@ object DumlProtocol {
     /** `DataFlycFunctionControl` (`0x03 / 0x2A`) command byte for initiating automated landing (`AutoLanding`). */
     const val FLYC_FUNCTION_CONTROL_AUTO_LAND: Int = 0x02
 
+    /** `DataFlycFunctionControl` (`0x03 / 0x2A`) command byte for initiating compass calibration (`Calibration`). */
+    const val FLYC_FUNCTION_CONTROL_COMPASS_CALIBRATION: Int = 0x09
+
+    /** `DataFlycFunctionControl` (`0x03 / 0x2A`) command byte for canceling compass calibration (`DropCalibration`). */
+    const val FLYC_FUNCTION_CONTROL_STOP_COMPASS_CALIBRATION: Int = 0x15
+
     /**
      * Bitmask in byte `12` (`0x0C`) of `DataRcGetPushParams` (`0x06 / 0x05`) for the physical
      * front `Fn` button (`Custom1` `0x10`), excluding the right-shoulder `C` button (`Custom2` `0x08`).
@@ -334,6 +340,60 @@ object DumlProtocol {
     }
 
     /**
+     * Builds a DUML v1 Flight Controller Function Control (`0x03 / 0x2A`) command
+     * requesting the flight controller to enter compass calibration mode (`Calibration` = `0x09`).
+     *
+     * Transmitted from [MODULE_MOBILE_APP] to [MODULE_FLIGHT_CONTROLLER] with ACK requested.
+     */
+    fun buildStartCompassCalibrationDumlFrame(sequenceNumber: Int): ByteArray {
+        return buildDumlFrame(
+            sourceModuleId = MODULE_MOBILE_APP,
+            destinationModuleId = MODULE_FLIGHT_CONTROLLER,
+            sequenceNumber = sequenceNumber,
+            commandType = COMMAND_TYPE_REQUEST_WITH_ACK,
+            commandSet = MODULE_FLIGHT_CONTROLLER,
+            commandId = CMD_FLIGHT_CONTROLLER_FUNCTION_CONTROL,
+            payload = byteArrayOf(FLYC_FUNCTION_CONTROL_COMPASS_CALIBRATION.toByte()),
+        )
+    }
+
+    /**
+     * Builds a DUML v1 Flight Controller Function Control (`0x03 / 0x2A`) `Calibration`
+     * command wrapped inside DJI's 8-byte AOA multiplex header.
+     */
+    fun buildStartCompassCalibrationCommand(sequenceNumber: Int): ByteArray {
+        val dumlFrame = buildStartCompassCalibrationDumlFrame(sequenceNumber)
+        return wrapInAoaEnvelope(dumlFrame, AOA_CHANNEL_DUML)
+    }
+
+    /**
+     * Builds a DUML v1 Flight Controller Function Control (`0x03 / 0x2A`) command
+     * requesting the flight controller to cancel or exit compass calibration mode (`DropCalibration` = `0x15`).
+     *
+     * Transmitted from [MODULE_MOBILE_APP] to [MODULE_FLIGHT_CONTROLLER] with ACK requested.
+     */
+    fun buildStopCompassCalibrationDumlFrame(sequenceNumber: Int): ByteArray {
+        return buildDumlFrame(
+            sourceModuleId = MODULE_MOBILE_APP,
+            destinationModuleId = MODULE_FLIGHT_CONTROLLER,
+            sequenceNumber = sequenceNumber,
+            commandType = COMMAND_TYPE_REQUEST_WITH_ACK,
+            commandSet = MODULE_FLIGHT_CONTROLLER,
+            commandId = CMD_FLIGHT_CONTROLLER_FUNCTION_CONTROL,
+            payload = byteArrayOf(FLYC_FUNCTION_CONTROL_STOP_COMPASS_CALIBRATION.toByte()),
+        )
+    }
+
+    /**
+     * Builds a DUML v1 Flight Controller Function Control (`0x03 / 0x2A`) `DropCalibration`
+     * command wrapped inside DJI's 8-byte AOA multiplex header.
+     */
+    fun buildStopCompassCalibrationCommand(sequenceNumber: Int): ByteArray {
+        val dumlFrame = buildStopCompassCalibrationDumlFrame(sequenceNumber)
+        return wrapInAoaEnvelope(dumlFrame, AOA_CHANNEL_DUML)
+    }
+
+    /**
      * Builds a DUML v1 packet instructing the camera subsystem to start video recording.
      *
      * Constructs the native camera record command (`0x02 / 0x02`) with argument `0x01` (start recording),
@@ -550,7 +610,7 @@ object DumlProtocol {
         val rthActive = (controllerStateFlags and 0x20) != 0 || modeByte == 15
         val autoLanding = (controllerStateFlags and 0x80) != 0 || modeByte == 12 || modeByte == 13 || modeByte == 33
         val lowBatteryWarning = false
-        val compassError = (controllerStateFlags and 0x400) != 0
+        val compassError = (controllerStateFlags and 0x10000) != 0
         val sportMode = (controllerStateFlags and 0x800) != 0 || modeByte == 31
 
         val rawUltrasonic = if (payload.size >= 40) {

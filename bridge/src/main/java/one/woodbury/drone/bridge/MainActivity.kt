@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -175,6 +176,7 @@ private fun setNotificationPrimerShown(context: Context, shown: Boolean = true) 
 enum class BridgeScreen {
     MAIN,
     STREAM_DEBUG,
+    COMPASS_CALIBRATION,
 }
 
 /**
@@ -309,6 +311,7 @@ class MainActivity : ComponentActivity() {
                                 onDisconnectSubscribersClicked = { connectionManager.disconnectAllSubscribers() },
                                 onResumeSubscribersClicked = { connectionManager.resumeSubscribers() },
                                 onOpenDebugClicked = { currentScreen = BridgeScreen.STREAM_DEBUG },
+                                onCalibrateCompassClicked = { currentScreen = BridgeScreen.COMPASS_CALIBRATION },
                                 onShowDisclaimer = { showDisclaimerDialogManually = true },
                                 modifier = Modifier.padding(innerPadding),
                             )
@@ -317,6 +320,14 @@ class MainActivity : ComponentActivity() {
                             StreamDebugScreen(
                                 state = streamDebugState,
                                 onBackClicked = { currentScreen = BridgeScreen.MAIN },
+                                modifier = Modifier.padding(innerPadding),
+                            )
+                        }
+                        BridgeScreen.COMPASS_CALIBRATION -> {
+                            CompassCalibrationScreen(
+                                onBackClicked = { currentScreen = BridgeScreen.MAIN },
+                                onStartCalibrationClicked = { connectionManager.startCompassCalibration() },
+                                onCancelCalibrationClicked = { connectionManager.stopCompassCalibration() },
                                 modifier = Modifier.padding(innerPadding),
                             )
                         }
@@ -366,6 +377,7 @@ fun ControllerDiagnosticsScreen(
     onDisconnectSubscribersClicked: () -> Unit,
     onResumeSubscribersClicked: () -> Unit,
     onOpenDebugClicked: () -> Unit,
+    onCalibrateCompassClicked: () -> Unit = {},
     onShowDisclaimer: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -381,6 +393,42 @@ fun ControllerDiagnosticsScreen(
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
         )
+
+        if (telemetryState.flightControllerTelemetry?.isCompassError == true) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = "Compass Calibration Required",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    Text(
+                        text = "The flight controller has detected severe magnetic interference or a compass discrepancy. Motor arming is locked until calibration is complete.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    Button(
+                        onClick = onCalibrateCompassClicked,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Calibrate Compass")
+                    }
+                }
+            }
+        }
 
         if (!isIgnoringBatteryOptimizations && !isBatteryOptimizationCardDismissed) {
             BatteryOptimizationCard(
@@ -1124,7 +1172,9 @@ private fun ControllerTelemetryCard(axes: RemoteControllerAxes?) {
 }
 
 @Composable
-private fun AircraftTelemetryCard(state: TelemetryState) {
+private fun AircraftTelemetryCard(
+    state: TelemetryState,
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -1362,6 +1412,18 @@ fun StreamDebugScreenPreview() {
                 lastRawHexPreview = "55 CC 49 57 17 00 00 00 55 17 04 92",
             ),
             onBackClicked = {},
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun CompassCalibrationScreenPreview() {
+    DroneTheme {
+        CompassCalibrationScreen(
+            onBackClicked = {},
+            onStartCalibrationClicked = {},
+            onCancelCalibrationClicked = {},
         )
     }
 }

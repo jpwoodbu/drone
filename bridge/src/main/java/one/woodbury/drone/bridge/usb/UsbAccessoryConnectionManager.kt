@@ -170,6 +170,10 @@ class UsbAccessoryConnectionManager(
     @Volatile
     private var currentAccessoryDescriptor: UsbAccessoryDescriptor? = null
 
+    private var lastFlycOsdLogTimestampMs: Long = 0L
+    private var lastLoggedFlags: Int = 0
+    private var lastLoggedMode: Int = -1
+
     @Volatile
     var isUiVisible: Boolean = false
         private set
@@ -410,6 +414,46 @@ class UsbAccessoryConnectionManager(
     }
 
     /**
+     * Sends a DUML command (`0x03 / 0x2A`, payload `0x09`) instructing the flight controller
+     * to enter compass calibration mode.
+     */
+    fun startCompassCalibration() {
+        managerScope.launch {
+            val sequence = sequenceCounter.getAndIncrement() and 0xFFFF
+            val transmissionSummary = "TX: Start Compass Calibration (#%05d)".format(sequence)
+            Log.i(TAG, transmissionSummary)
+            latestCommandInteraction = transmissionSummary
+            if (isDebugStreamActive) {
+                publishDebugState()
+            }
+            val calibrationCommand = DumlProtocol.buildStartCompassCalibrationCommand(
+                sequenceNumber = sequence,
+            )
+            writeBytesToAccessory(calibrationCommand)
+        }
+    }
+
+    /**
+     * Sends a DUML command (`0x03 / 0x2A`, payload `0x15`) instructing the flight controller
+     * to cancel or exit compass calibration mode.
+     */
+    fun stopCompassCalibration() {
+        managerScope.launch {
+            val sequence = sequenceCounter.getAndIncrement() and 0xFFFF
+            val transmissionSummary = "TX: Stop Compass Calibration (#%05d)".format(sequence)
+            Log.i(TAG, transmissionSummary)
+            latestCommandInteraction = transmissionSummary
+            if (isDebugStreamActive) {
+                publishDebugState()
+            }
+            val cancelCommand = DumlProtocol.buildStopCompassCalibrationCommand(
+                sequenceNumber = sequence,
+            )
+            writeBytesToAccessory(cancelCommand)
+        }
+    }
+
+    /**
      * Releases all resources when the owning activity is destroyed.
      */
     fun shutdown() {
@@ -554,9 +598,15 @@ class UsbAccessoryConnectionManager(
                 payloadHex = if (frame.payload.isEmpty()) {
                     "(empty payload)"
                 } else {
-                    DumlProtocol.formatHexPreview(frame.payload, maxBytes = 16)
+                    DumlProtocol.formatHexPreview(frame.payload, maxBytes = 64)
                 },
             )
+        }
+
+        val isFlycPacket = (frame.sourceModuleId and 0x1F) == DumlProtocol.MODULE_FLIGHT_CONTROLLER ||
+            frame.commandSet == DumlProtocol.MODULE_FLIGHT_CONTROLLER
+        if (isFlycPacket) {
+            logFlightControllerPacket(frame)
         }
 
         val decodedOsd = DumlProtocol.decodeFlightControllerOsdTelemetry(frame)
@@ -653,6 +703,51 @@ class UsbAccessoryConnectionManager(
 
         if (isDebugStreamActive) {
             publishDebugState()
+        }
+    }
+
+    /**
+     * Emits diagnostic logging for flight controller DUML frames to troubleshoot sensor states.
+     */
+    private fun logFlightControllerPacket(frame: DumlFrame) {
+        val now = System.currentTimeMillis()
+        if (frame.commandId == 0x43) {
+            val payload = frame.payload
+            val modeByte = if (payload.size > 30) payload[30].toInt() and 0xFF else -1
+            val flags = if (payload.size >= 36) {
+                (payload[32].toInt() and 0xFF) or
+                    ((payload[33].toInt() and 0xFF) shl 8) or
+                    ((payload[34].toInt() and 0xFF) shl 16) or
+                    ((payload[35].toInt() and 0xFF) shl 24)
+            } else {
+                0
+            }
+
+            // Rate-limit high-frequency 10 Hz OSD logging to 1 second unless status flags or flight mode change.
+            if (now - lastFlycOsdLogTimestampMs >= 1000L || flags != lastLoggedFlags || modeByte != lastLoggedMode) {
+                lastFlycOsdLogTimestampMs = now
+                lastLoggedFlags = flags
+                lastLoggedMode = modeByte
+                val hexString = payload.joinToString("") { "%02X".format(it) }
+                val compassError = (flags and 0x10000) != 0
+                Log.i(
+                    TAG,
+                    "FlyC OSD (0x43): len=${payload.size} mode=$modeByte flags=0x%08X (bit16_compassError=$compassError) hex=$hexString".format(flags),
+                )
+            }
+        } else {
+            val hexString = frame.payload.joinToString("") { "%02X".format(it) }
+            Log.i(
+                TAG,
+                "FlyC Packet: cmdSet=0x%02X cmdId=0x%02X type=0x%02X seq=%d len=%d hex=%s".format(
+                    frame.commandSet,
+                    frame.commandId,
+                    frame.commandType,
+                    frame.sequenceNumber,
+                    frame.payload.size,
+                    hexString,
+                ),
+            )
         }
     }
 
@@ -918,13 +1013,22 @@ class UsbAccessoryConnectionManager(
     }
 
     private fun extractDescriptor(usbAccessory: UsbAccessory): UsbAccessoryDescriptor {
+        val serialNumber = try {
+            if (usbManager.hasPermission(usbAccessory)) {
+                usbAccessory.serial.orEmpty()
+            } else {
+                ""
+            }
+        } catch (_: SecurityException) {
+            ""
+        }
         return UsbAccessoryDescriptor(
             manufacturer = usbAccessory.manufacturer.orEmpty(),
             model = usbAccessory.model.orEmpty(),
             description = usbAccessory.description.orEmpty(),
             version = usbAccessory.version.orEmpty(),
             uri = usbAccessory.uri.orEmpty(),
-            serial = usbAccessory.serial.orEmpty(),
+            serial = serialNumber,
         )
     }
 
