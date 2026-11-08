@@ -164,6 +164,14 @@ Generated APKs:
 
 ## Disclaimers & Legal Notices
 
+### License
+
+The source code in this repository is licensed under the GNU General Public
+License v3.0 (see `LICENSE`). Official compiled builds distributed through the
+Google Play Store and Meta Horizon Store are published by the copyright holder
+under a separate commercial license and the respective storefront End User
+License Agreements.
+
 ### Aviation Safety & Regulatory Compliance
 
 Operating unmanned aircraft systems (drones) involves inherent operational and
