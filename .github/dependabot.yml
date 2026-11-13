@@ -5,6 +5,10 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    ignore:
+      # Skip AGP 9.5.1 due to build failures, while allowing newer releases such as 9.5.2 or 9.6.0.
+      - dependency-name: "com.android.*"
+        versions: ["9.5.1"]
     groups:
       androidx-compose:
         patterns:
