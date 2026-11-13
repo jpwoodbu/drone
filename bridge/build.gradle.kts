@@ -58,6 +58,12 @@ android {
     buildFeatures {
         compose = true
     }
+    lint {
+        // The YYYYMMDDXX versionCode scheme intentionally exceeds
+        // 2,000,000,000. Our convention wouldn't hit the max value until after
+        // the year 2100.
+        disable += "HighAppVersionCode"
+    }
 }
 
 dependencies {
