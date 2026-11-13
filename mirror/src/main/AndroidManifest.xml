@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:installLocation="auto">
 
     <uses-permission android:name="android.permission.INTERNET" />
@@ -14,6 +15,8 @@
 
     <application
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -24,16 +27,22 @@
             android:name="com.oculus.supportedDevices"
             android:value="quest2|questpro|quest3|quest3s|vrglasses" />
 
+        <!--
+          Meta Horizon OS 2D panel guidelines require a landscape orientation
+          (`android:screenOrientation="sensorLandscape"`), which is also
+          intentional for the FPV HUD layout. `tools:ignore="DiscouragedApi"`
+          suppresses the Android 16+ warning against fixed orientations.
+        -->
         <activity
             android:name=".MirrorMainActivity"
             android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode"
             android:excludeFromRecents="true"
             android:exported="true"
-            android:label="@string/app_name"
             android:launchMode="singleTask"
             android:resizeableActivity="true"
             android:screenOrientation="sensorLandscape"
-            android:theme="@style/Theme.DroneMirror">
+            android:theme="@style/Theme.DroneMirror"
+            tools:ignore="DiscouragedApi">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

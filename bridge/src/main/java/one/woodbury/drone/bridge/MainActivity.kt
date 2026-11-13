@@ -1,10 +1,10 @@
 package one.woodbury.drone.bridge
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -69,6 +69,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -111,10 +113,12 @@ private fun isIgnoringBatteryOptimizations(context: Context): Boolean {
 /**
  * Requests disabling battery optimization via direct prompt or system settings.
  */
+// Uninterrupted USB AOA and UDP telemetry streaming during flight requires battery optimization exemption.
+@SuppressLint("BatteryLife")
 private fun requestIgnoreBatteryOptimization(context: Context) {
     try {
         val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-            data = Uri.parse("package:${context.packageName}")
+            data = "package:${context.packageName}".toUri()
         }
         context.startActivity(intent)
     } catch (_: Exception) {
@@ -123,7 +127,7 @@ private fun requestIgnoreBatteryOptimization(context: Context) {
             context.startActivity(fallbackIntent)
         } catch (_: Exception) {
             val appDetailsIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.parse("package:${context.packageName}")
+                data = "package:${context.packageName}".toUri()
             }
             context.startActivity(appDetailsIntent)
         }
@@ -146,10 +150,9 @@ private fun isDisclaimerAccepted(context: Context): Boolean {
  * Persists whether the safety and legal disclaimer has been accepted.
  */
 private fun setDisclaimerAccepted(context: Context, accepted: Boolean = true) {
-    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        .edit()
-        .putBoolean(PREF_KEY_DISCLAIMER_ACCEPTED, accepted)
-        .apply()
+    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+        putBoolean(PREF_KEY_DISCLAIMER_ACCEPTED, accepted)
+    }
 }
 
 /**
@@ -164,10 +167,9 @@ private fun isNotificationPrimerShown(context: Context): Boolean {
  * Persists whether the notification primer dialog has been shown.
  */
 private fun setNotificationPrimerShown(context: Context, shown: Boolean = true) {
-    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        .edit()
-        .putBoolean(PREF_KEY_NOTIFICATION_PRIMER_SHOWN, shown)
-        .apply()
+    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+        putBoolean(PREF_KEY_NOTIFICATION_PRIMER_SHOWN, shown)
+    }
 }
 
 /**
@@ -262,7 +264,9 @@ class MainActivity : ComponentActivity() {
                         onContinue = {
                             setNotificationPrimerShown(context, true)
                             showNotificationPrimerDialog = false
-                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
                         },
                         onDismiss = {
                             setNotificationPrimerShown(context, true)
@@ -368,6 +372,7 @@ class MainActivity : ComponentActivity() {
 fun ControllerDiagnosticsScreen(
     mainState: BridgeMainScreenState,
     telemetryState: TelemetryState,
+    modifier: Modifier = Modifier,
     videoDecoder: H264VideoDecoder? = null,
     isIgnoringBatteryOptimizations: Boolean = true,
     isBatteryOptimizationCardDismissed: Boolean = false,
@@ -379,7 +384,6 @@ fun ControllerDiagnosticsScreen(
     onOpenDebugClicked: () -> Unit,
     onCalibrateCompassClicked: () -> Unit = {},
     onShowDisclaimer: () -> Unit = {},
-    modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier

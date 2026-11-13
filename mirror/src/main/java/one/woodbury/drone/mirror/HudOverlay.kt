@@ -199,12 +199,8 @@ fun HudOverlay(
     val telemetry = state.flightControllerTelemetry
     val isImperial = state.unitSystem.isImperial
 
-    val hasValidVps = telemetry?.isUltrasonicValid == true && telemetry.ultrasonicHeightMeters != null
-    val effectiveAltitudeMeters = if (hasValidVps) {
-        telemetry!!.ultrasonicHeightMeters!!
-    } else {
-        telemetry?.relativeAltitudeMeters
-    }
+    val ultrasonicHeight = telemetry?.takeIf { it.isUltrasonicValid }?.ultrasonicHeightMeters
+    val effectiveAltitudeMeters = ultrasonicHeight ?: telemetry?.relativeAltitudeMeters
     val isAltitudeWarning = effectiveAltitudeMeters != null &&
         AltitudeFormatter.isHighAltitudeWarning(effectiveAltitudeMeters)
 
@@ -710,8 +706,8 @@ private fun HudDataRow(
     value: String,
     hudColor: Color,
     boxBackgroundColor: Color,
-    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
 ) {
     val rowModifier = if (onClick != null) {
         modifier

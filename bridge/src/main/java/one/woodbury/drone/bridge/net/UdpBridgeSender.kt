@@ -138,7 +138,7 @@ class UdpBridgeSender(
                 Thread(runnable, "dji-udp-announce").apply { isDaemon = true }
             }
             announceScheduler = scheduler
-            scheduler.scheduleAtFixedRate(
+            scheduler.scheduleWithFixedDelay(
                 {
                     broadcastBridgeAnnounce(socket)
                 },

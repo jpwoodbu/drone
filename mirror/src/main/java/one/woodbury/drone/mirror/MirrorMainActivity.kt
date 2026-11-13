@@ -622,8 +622,8 @@ private fun TopStatusBar(
     val telemetry = state.flightControllerTelemetry
     val isImperial = state.unitSystem.isImperial
 
-    val hasValidVps = telemetry?.isUltrasonicValid == true && telemetry.ultrasonicHeightMeters != null
-    val effectiveAltitude = if (hasValidVps) telemetry!!.ultrasonicHeightMeters!! else telemetry?.relativeAltitudeMeters
+    val ultrasonicHeight = telemetry?.takeIf { it.isUltrasonicValid }?.ultrasonicHeightMeters
+    val effectiveAltitude = ultrasonicHeight ?: telemetry?.relativeAltitudeMeters
     val altitudeText = if (effectiveAltitude != null) {
         AltitudeFormatter.formatAltitude(effectiveAltitude, state.unitSystem)
     } else {

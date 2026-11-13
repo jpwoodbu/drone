@@ -77,6 +77,11 @@ android {
         // 2,000,000,000. Our convention wouldn't hit the max value until after
         // the year 2100.
         disable += "HighAppVersionCode"
+        // The horizon flavor restricts abiFilters to arm64-v8a for Meta Horizon
+        // OS headsets, while the play flavor retains all ABIs; ChromeOS x86_64
+        // support is intentionally omitted for horizon as per Meta's
+        // requirements.
+        disable += "ChromeOsAbiSupport"
     }
 }
 

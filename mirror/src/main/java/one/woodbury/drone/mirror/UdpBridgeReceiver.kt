@@ -8,6 +8,7 @@ import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.os.SystemClock
 import android.util.Log
+import androidx.core.content.edit
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -216,9 +217,9 @@ class UdpBridgeReceiver(
     fun setConfiguredBridgeIp(ipAddress: String) {
         val sanitized = ipAddress.trim()
         manualBridgeIp = sanitized
-        sharedPreferences.edit()
-            .putString(_preferenceBridgeIp, sanitized)
-            .apply()
+        sharedPreferences.edit {
+            putString(_preferenceBridgeIp, sanitized)
+        }
         if (sanitized.isEmpty()) {
             latestBridgeInetAddress = null
             lastKnownBridgeAddress = null
@@ -249,9 +250,9 @@ class UdpBridgeReceiver(
      */
     fun setUnitSystem(unitSystem: UnitSystem) {
         currentUnitSystem = unitSystem
-        sharedPreferences.edit()
-            .putString(_preferenceUnitSystem, unitSystem.name)
-            .apply()
+        sharedPreferences.edit {
+            putString(_preferenceUnitSystem, unitSystem.name)
+        }
         _receiverState.update { currentState ->
             currentState.copy(unitSystem = unitSystem)
         }
@@ -262,9 +263,9 @@ class UdpBridgeReceiver(
      */
     fun setHudEnabled(enabled: Boolean) {
         currentHudEnabled = enabled
-        sharedPreferences.edit()
-            .putBoolean(_preferenceHudEnabled, enabled)
-            .apply()
+        sharedPreferences.edit {
+            putBoolean(_preferenceHudEnabled, enabled)
+        }
         _receiverState.update { currentState ->
             currentState.copy(isHudEnabled = enabled)
         }
@@ -276,9 +277,9 @@ class UdpBridgeReceiver(
     fun setHudOpacity(opacity: Float) {
         val clamped = opacity.coerceIn(0.2f, 1.0f)
         currentHudOpacity = clamped
-        sharedPreferences.edit()
-            .putFloat(_preferenceHudOpacity, clamped)
-            .apply()
+        sharedPreferences.edit {
+            putFloat(_preferenceHudOpacity, clamped)
+        }
         _receiverState.update { currentState ->
             currentState.copy(hudOpacity = clamped)
         }
@@ -290,9 +291,9 @@ class UdpBridgeReceiver(
     fun setHudAspectRatio(aspectRatio: Float) {
         val clamped = aspectRatio.coerceIn(HUD_ASPECT_RATIO_MIN, HUD_ASPECT_RATIO_MAX)
         currentHudAspectRatio = clamped
-        sharedPreferences.edit()
-            .putFloat(_preferenceHudAspectRatio, clamped)
-            .apply()
+        sharedPreferences.edit {
+            putFloat(_preferenceHudAspectRatio, clamped)
+        }
         _receiverState.update { currentState ->
             currentState.copy(hudAspectRatio = clamped)
         }
@@ -434,7 +435,7 @@ class UdpBridgeReceiver(
                 Thread(runnable, "dji-mirror-heartbeat").apply { isDaemon = true }
             }
             heartbeatScheduler = scheduler
-            scheduler.scheduleAtFixedRate(
+            scheduler.scheduleWithFixedDelay(
                 {
                     try {
                         sendDiscoveryHeartbeats(socket)

@@ -1,5 +1,6 @@
 package one.woodbury.drone.bridge.service
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -9,7 +10,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
-import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
@@ -39,15 +39,11 @@ class BridgeForegroundService : Service() {
         lastState = NotificationState(isStreaming = false, isPaused = false)
         createNotificationChannel()
         val notification = buildNotification(this, isStreaming = false, isPaused = false)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+        startForeground(
+            NOTIFICATION_ID,
+            notification,
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
+        )
         acquireLocks()
     }
 
@@ -64,20 +60,20 @@ class BridgeForegroundService : Service() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                NOTIFICATION_CHANNEL_ID,
-                getString(R.string.bridge_notification_channel_name),
-                NotificationManager.IMPORTANCE_LOW,
-            ).apply {
-                description = getString(R.string.bridge_notification_channel_description)
-                setShowBadge(false)
-            }
-            val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager?.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            NOTIFICATION_CHANNEL_ID,
+            getString(R.string.bridge_notification_channel_name),
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = getString(R.string.bridge_notification_channel_description)
+            setShowBadge(false)
         }
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager?.createNotificationChannel(channel)
     }
 
+    // The wake lock is held for the lifetime of the active session and released in onDestroy().
+    @SuppressLint("WakelockTimeout")
     private fun acquireLocks() {
         try {
             val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -94,14 +90,8 @@ class BridgeForegroundService : Service() {
 
         try {
             val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-            val lockType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                WifiManager.WIFI_MODE_FULL_LOW_LATENCY
-            } else {
-                @Suppress("DEPRECATION")
-                WifiManager.WIFI_MODE_FULL_HIGH_PERF
-            }
             wifiLock = wifiManager?.createWifiLock(
-                lockType,
+                WifiManager.WIFI_MODE_FULL_LOW_LATENCY,
                 "one.woodbury.drone.bridge:BridgeWifiLock",
             )?.apply {
                 setReferenceCounted(false)
