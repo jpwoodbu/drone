@@ -23,8 +23,8 @@ android {
         applicationId = "one.woodbury.drone.bridge"
         minSdk = 29
         targetSdk = 36
-        versionCode = 2026102901
-        versionName = "0.1"
+        versionCode = 2026112701
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
